@@ -793,3 +793,112 @@ app.get('/api/community/posts/:id/signups', async (req, res) => {
 app.listen(port, () => {
   console.log(`服务器运行在 http://localhost:${port}`);
 });
+// ==================== 商品审核接口（管理员）====================
+
+// 获取待审核商品列表
+app.get('/api/products/audit', async (req, res) => {
+  const { audit_status } = req.query
+  try {
+    let sql = 'SELECT p.*, u.nickName AS farmer_nick, u.userName AS farmer_name FROM products p LEFT JOIN user u ON p.farmer_id = u.id'
+    const params = []
+    if (audit_status !== undefined) {
+      sql += ' WHERE p.audit_status = ?'
+      params.push(parseInt(audit_status))
+    }
+    sql += ' ORDER BY p.id DESC'
+    const [rows] = await pool.query(sql, params)
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取失败', error: error.message })
+  }
+})
+
+// 审核商品（管理员）
+app.put('/api/products/:id/audit', async (req, res) => {
+  const { id } = req.params
+  const { audit_status } = req.body // 1=通过 2=拒绝
+  try {
+    await pool.query('UPDATE products SET audit_status = ? WHERE id = ?', [audit_status, id])
+    res.json({ success: true, message: audit_status === 1 ? '审核通过' : '已拒绝' })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '操作失败', error: error.message })
+  }
+})
+
+// 获取某农户的商品（含审核状态）
+app.get('/api/farmer/products', async (req, res) => {
+  const { farmer_id } = req.query
+  if (!farmer_id) return res.status(400).json({ success: false, message: '缺少 farmer_id' })
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM products WHERE farmer_id = ? ORDER BY id DESC', [farmer_id]
+    )
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取失败', error: error.message })
+  }
+})
+
+// 农户发布商品（自动设为待审核）
+app.post('/api/farmer/products', async (req, res) => {
+  const { name, price, originalPrice, sales = 0, categoryId, tags, image, amount, farmer_id } = req.body
+  if (!farmer_id) return res.status(400).json({ success: false, message: '缺少 farmer_id' })
+  try {
+    await pool.query(
+      'INSERT INTO products (name, price, originalPrice, sales, categoryId, tags, image, amount, farmer_id, audit_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
+      [name, price, originalPrice, sales, categoryId, tags, image, amount, farmer_id]
+    )
+    res.json({ success: true, message: '商品已提交，等待管理员审核' })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '发布失败', error: error.message })
+  }
+})
+
+// ==================== 农户订单接口 ====================
+
+// 农户查看涉及自己商品的订单（通过 seller 字段匹配）
+app.get('/api/farmer/orders', async (req, res) => {
+  const { farmer_id } = req.query
+  if (!farmer_id) return res.status(400).json({ success: false, message: '缺少 farmer_id' })
+  try {
+    // 获取该农户的昵称/用户名，用于匹配 seller
+    const [[farmer]] = await pool.query('SELECT nickName, userName FROM user WHERE id = ?', [farmer_id])
+    if (!farmer) return res.status(404).json({ success: false, message: '农户不存在' })
+    const farmerName = farmer.nickName || farmer.userName
+    const [rows] = await pool.query(
+      'SELECT * FROM orders WHERE seller = ? ORDER BY order_time DESC', [farmerName]
+    )
+    res.json({ success: true, data: rows, farmerName })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取失败', error: error.message })
+  }
+})
+
+// 农户更新订单状态（如发货）
+app.put('/api/farmer/orders/:id/status', async (req, res) => {
+  const { id } = req.params
+  const { order_status } = req.body
+  try {
+    await pool.query('UPDATE orders SET order_status = ? WHERE order_id = ?', [order_status, id])
+    res.json({ success: true, message: '状态更新成功' })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '更新失败', error: error.message })
+  }
+})
+
+// ==================== 帖子附带商品 ====================
+
+// 获取农户已审核通过的商品（发帖时选择用）
+app.get('/api/farmer/products/approved', async (req, res) => {
+  const { farmer_id } = req.query
+  if (!farmer_id) return res.status(400).json({ success: false, message: '缺少 farmer_id' })
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, name, price, image, amount FROM products WHERE farmer_id = ? AND audit_status = 1',
+      [farmer_id]
+    )
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取失败', error: error.message })
+  }
+})

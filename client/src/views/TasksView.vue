@@ -9,19 +9,12 @@
       </div>
       <div class="header-right">
         <div class="tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.value"
+          <button v-for="tab in tabs" :key="tab.value"
             :class="['tab-btn', { active: activeTab === tab.value }]"
             @click="switchTab(tab.value)"
           >{{ tab.label }}</button>
         </div>
-        <el-button
-          v-if="canPost"
-          type="primary"
-          class="post-btn"
-          @click="openPostDialog"
-        >+ 发帖</el-button>
+        <el-button v-if="canPost" type="primary" class="post-btn" @click="openPostDialog">+ 发帖</el-button>
       </div>
     </div>
 
@@ -47,6 +40,32 @@
               </div>
               <div class="post-title">{{ post.title }}</div>
               <div class="post-content">{{ post.content }}</div>
+
+              <!-- 附带商品列表 -->
+              <div v-if="post._products && post._products.length" class="attached-products">
+                <div class="ap-label">
+                  <svg viewBox="0 0 14 14" fill="none" stroke="#2d6a45" stroke-width="1.5" width="12" height="12">
+                    <path d="M4 4h5l1.5 8h-8z"/><line x1="2" y1="4" x2="4" y2="4"/>
+                  </svg>
+                  附带农产品
+                </div>
+                <div class="ap-list">
+                  <div
+                    v-for="prod in post._products" :key="prod.id"
+                    class="ap-item"
+                    @click="openProductDetail(prod)"
+                  >
+                    <img :src="prod.image" :alt="prod.name" class="ap-img" v-if="prod.image"/>
+                    <div class="ap-no-img" v-else>📦</div>
+                    <div class="ap-info">
+                      <div class="ap-name">{{ prod.name }}</div>
+                      <div class="ap-price">¥{{ prod.price }}</div>
+                    </div>
+                    <div class="ap-arrow">›</div>
+                  </div>
+                </div>
+              </div>
+
               <div class="action-row">
                 <button :class="['action-btn', { liked: post.is_liked }]" @click="toggleLike(post)">
                   <svg viewBox="0 0 16 16" :fill="post.is_liked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.5" width="15" height="15">
@@ -60,11 +79,7 @@
                   </svg>
                   {{ post.comment_count }}
                 </button>
-                <button
-                  v-if="canDelete(post)"
-                  class="action-btn delete-btn"
-                  @click="deletePost(post)"
-                >删除</button>
+                <button v-if="canDelete(post)" class="action-btn delete-btn" @click="deletePost(post)">删除</button>
               </div>
             </div>
             <div v-if="post.image" class="card-img-wrap">
@@ -83,11 +98,7 @@
                   <div class="c-header">
                     <span class="c-name">{{ c.user_nick || c.user_name }}</span>
                     <span class="c-time">{{ formatTime(c.created_at) }}</span>
-                    <button
-                      v-if="canDeleteComment(c)"
-                      class="c-del-btn"
-                      @click="deleteComment(post, c)"
-                    >删除</button>
+                    <button v-if="canDeleteComment(c)" class="c-del-btn" @click="deleteComment(post, c)">删除</button>
                   </div>
                   <div class="c-content">{{ c.content }}</div>
                 </div>
@@ -95,13 +106,7 @@
             </div>
             <div v-else class="no-comment">暂无评论，来说点什么吧</div>
             <div class="comment-input-row">
-              <el-input
-                v-model="commentText"
-                placeholder="写下你的评论..."
-                size="small"
-                style="flex:1"
-                @keyup.enter="submitComment(post)"
-              />
+              <el-input v-model="commentText" placeholder="写下你的评论..." size="small" style="flex:1" @keyup.enter="submitComment(post)"/>
               <el-button size="small" type="primary" @click="submitComment(post)">发送</el-button>
             </div>
           </div>
@@ -125,7 +130,6 @@
               <div class="post-title">{{ post.title }}</div>
               <div class="post-content">{{ post.content }}</div>
 
-              <!-- 任务信息条 -->
               <div class="task-meta">
                 <span class="meta-item">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M5 1v4M11 1v4M2 7h12"/></svg>
@@ -141,13 +145,9 @@
                 </span>
               </div>
 
-              <!-- 报名进度条 -->
               <div class="signup-progress">
                 <div class="progress-bar-bg">
-                  <div
-                    class="progress-bar-fill"
-                    :style="{ width: progressWidth(post) + '%' }"
-                  ></div>
+                  <div class="progress-bar-fill" :style="{ width: progressWidth(post) + '%' }"></div>
                 </div>
                 <span class="progress-text">{{ post.signup_count }} / {{ post.max_people }} 人</span>
               </div>
@@ -165,33 +165,15 @@
                   </svg>
                   {{ post.comment_count }}
                 </button>
-                <!-- 农户/管理员：查看报名名单 -->
-                <button
-                  v-if="canViewSignups(post)"
-                  class="action-btn"
-                  @click="openSignupList(post)"
-                >查看报名</button>
-                <!-- 客户：报名/取消报名 -->
+                <button v-if="canViewSignups(post)" class="action-btn" @click="openSignupList(post)">查看报名</button>
                 <template v-if="isClient">
-                  <el-button
-                    v-if="!post.is_signed_up"
-                    size="small"
-                    type="success"
+                  <el-button v-if="!post.is_signed_up" size="small" type="success"
                     :disabled="post.signup_count >= post.max_people || post.status === 2"
                     @click="signup(post)"
                   >{{ post.signup_count >= post.max_people ? '已满员' : '立即报名' }}</el-button>
-                  <el-button
-                    v-else
-                    size="small"
-                    type="warning"
-                    @click="cancelSignup(post)"
-                  >取消报名</el-button>
+                  <el-button v-else size="small" type="warning" @click="cancelSignup(post)">取消报名</el-button>
                 </template>
-                <button
-                  v-if="canDelete(post)"
-                  class="action-btn delete-btn"
-                  @click="deletePost(post)"
-                >删除</button>
+                <button v-if="canDelete(post)" class="action-btn delete-btn" @click="deletePost(post)">删除</button>
               </div>
             </div>
           </div>
@@ -207,11 +189,7 @@
                   <div class="c-header">
                     <span class="c-name">{{ c.user_nick || c.user_name }}</span>
                     <span class="c-time">{{ formatTime(c.created_at) }}</span>
-                    <button
-                      v-if="canDeleteComment(c)"
-                      class="c-del-btn"
-                      @click="deleteComment(post, c)"
-                    >删除</button>
+                    <button v-if="canDeleteComment(c)" class="c-del-btn" @click="deleteComment(post, c)">删除</button>
                   </div>
                   <div class="c-content">{{ c.content }}</div>
                 </div>
@@ -219,13 +197,7 @@
             </div>
             <div v-else class="no-comment">暂无评论，来说点什么吧</div>
             <div class="comment-input-row">
-              <el-input
-                v-model="commentText"
-                placeholder="写下你的评论..."
-                size="small"
-                style="flex:1"
-                @keyup.enter="submitComment(post)"
-              />
+              <el-input v-model="commentText" placeholder="写下你的评论..." size="small" style="flex:1" @keyup.enter="submitComment(post)"/>
               <el-button size="small" type="primary" @click="submitComment(post)">发送</el-button>
             </div>
           </div>
@@ -236,17 +208,11 @@
 
     <!-- 分页 -->
     <div class="pagination-wrap" v-if="total > pageSize">
-      <el-pagination
-        v-model:current-page="currentPage"
-        :page-size="pageSize"
-        :total="total"
-        layout="prev, pager, next"
-        @current-change="fetchPosts"
-      />
+      <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="prev, pager, next" @current-change="fetchPosts"/>
     </div>
 
     <!-- ===== 发帖弹窗 ===== -->
-    <el-dialog v-model="postDialogVisible" title="发布帖子" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="postDialogVisible" title="发布帖子" width="580px" :close-on-click-modal="false">
       <el-form :model="postForm" :rules="postRules" ref="postFormRef" label-width="90px">
         <el-form-item label="帖子类型" prop="type">
           <el-radio-group v-model="postForm.type">
@@ -261,49 +227,64 @@
           <el-input v-model="postForm.content" type="textarea" :rows="4" placeholder="分享详情..." maxlength="1000" show-word-limit />
         </el-form-item>
 
-        <!-- 好物推荐：图片上传 -->
-        <el-form-item v-if="postForm.type === 1" label="配图">
-          <el-upload
-            action="#"
-            :auto-upload="false"
-            :show-file-list="false"
-            :on-change="handleImageChange"
-            accept="image/*"
-          >
-            <div class="upload-area">
-              <img v-if="postForm.image" :src="postForm.image" class="upload-preview" />
-              <div v-else class="upload-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span>点击上传图片</span>
+        <!-- 好物推荐：图片 + 附带商品 -->
+        <template v-if="postForm.type === 1">
+          <el-form-item label="配图">
+            <el-upload action="#" :auto-upload="false" :show-file-list="false" :on-change="handleImageChange" accept="image/*">
+              <div class="upload-area">
+                <img v-if="postForm.image" :src="postForm.image" class="upload-preview" />
+                <div v-else class="upload-placeholder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>点击上传图片</span>
+                </div>
+              </div>
+            </el-upload>
+          </el-form-item>
+
+          <!-- 附带审核通过的农产品 -->
+          <el-form-item label="附带产品">
+            <div class="product-picker">
+              <div v-if="approvedProducts.length === 0" class="no-products">
+                <span>暂无已审核通过的农产品</span>
+              </div>
+              <div v-else class="product-pick-list">
+                <div
+                  v-for="prod in approvedProducts" :key="prod.id"
+                  :class="['pick-item', { selected: postForm.selectedProductIds.includes(prod.id) }]"
+                  @click="toggleProductSelect(prod.id)"
+                >
+                  <img :src="prod.image" :alt="prod.name" class="pick-img" v-if="prod.image"/>
+                  <div class="pick-no-img" v-else>📦</div>
+                  <div class="pick-info">
+                    <div class="pick-name">{{ prod.name }}</div>
+                    <div class="pick-price">¥{{ prod.price }} / {{ prod.amount }}</div>
+                  </div>
+                  <div class="pick-check" v-if="postForm.selectedProductIds.includes(prod.id)">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2" width="10" height="10">
+                      <polyline points="1.5,6 4.5,9 10.5,3"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div v-if="postForm.selectedProductIds.length > 0" class="selected-tip">
+                已选 {{ postForm.selectedProductIds.length }} 件商品
               </div>
             </div>
-          </el-upload>
-        </el-form-item>
+          </el-form-item>
+        </template>
 
-        <!-- 助农任务：额外字段 -->
+        <!-- 助农任务额外字段 -->
         <template v-if="postForm.type === 2">
           <el-form-item label="任务报酬" prop="reward">
             <el-input v-model="postForm.reward" placeholder="如：180元/天、面议" />
           </el-form-item>
           <el-form-item label="开始时间" prop="start_time">
-            <el-date-picker
-              v-model="postForm.start_time"
-              type="datetime"
-              placeholder="选择开始时间"
-              format="YYYY-MM-DD HH:mm"
-              value-format="YYYY-MM-DD HH:mm:ss"
-              style="width:100%"
-            />
+            <el-date-picker v-model="postForm.start_time" type="datetime" placeholder="选择开始时间"
+              format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%"/>
           </el-form-item>
           <el-form-item label="结束时间" prop="end_time">
-            <el-date-picker
-              v-model="postForm.end_time"
-              type="datetime"
-              placeholder="选择结束时间"
-              format="YYYY-MM-DD HH:mm"
-              value-format="YYYY-MM-DD HH:mm:ss"
-              style="width:100%"
-            />
+            <el-date-picker v-model="postForm.end_time" type="datetime" placeholder="选择结束时间"
+              format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%"/>
           </el-form-item>
           <el-form-item label="任务地点" prop="location">
             <el-input v-model="postForm.location" placeholder="如：云南昭通苹果园" />
@@ -317,6 +298,44 @@
         <el-button @click="postDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="postSubmitting" @click="submitPost">发布</el-button>
       </template>
+    </el-dialog>
+
+    <!-- ===== 商品详情弹窗 ===== -->
+    <el-dialog v-model="productDetailVisible" title="农产品详情" width="420px" class="product-detail-dialog">
+      <div v-if="selectedProduct" class="product-detail">
+        <div class="pd-img-wrap">
+          <img :src="selectedProduct.image" :alt="selectedProduct.name" class="pd-img" v-if="selectedProduct.image"/>
+          <div v-else class="pd-no-img">📦</div>
+        </div>
+        <div class="pd-info">
+          <h3 class="pd-name">{{ selectedProduct.name }}</h3>
+          <div class="pd-price-row">
+            <span class="pd-price">¥{{ selectedProduct.price }}</span>
+            <span class="pd-origin" v-if="selectedProduct.originalPrice > selectedProduct.price">¥{{ selectedProduct.originalPrice }}</span>
+          </div>
+          <div class="pd-meta">
+            <span v-if="selectedProduct.amount" class="pd-meta-item">
+              <svg viewBox="0 0 14 14" fill="none" stroke="#9a9a8a" stroke-width="1.5" width="12" height="12"><rect x="2" y="2" width="10" height="10" rx="1"/></svg>
+              规格：{{ selectedProduct.amount }}
+            </span>
+            <span class="pd-meta-item">
+              <svg viewBox="0 0 14 14" fill="none" stroke="#9a9a8a" stroke-width="1.5" width="12" height="12"><path d="M7 1l1.8 3.8 4.2.6-3 3 .7 4.2L7 10.5l-3.7 2.1.7-4.2-3-3 4.2-.6z"/></svg>
+              销量：{{ selectedProduct.sales || 0 }}
+            </span>
+          </div>
+          <div class="pd-tags" v-if="selectedProduct.tags">
+            <span v-for="t in (Array.isArray(selectedProduct.tags) ? selectedProduct.tags : [])" :key="t" :class="['pd-tag', 'tag-' + t]">{{ t }}</span>
+          </div>
+        </div>
+        <div class="pd-actions">
+          <button class="pd-cart-btn" @click="addToCartFromPost(selectedProduct)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.5" width="14" height="14">
+              <path d="M1 1h2l2 9h7l2-8H4"/><circle cx="7" cy="13" r="1" fill="white" stroke="none"/><circle cx="13" cy="13" r="1" fill="white" stroke="none"/>
+            </svg>
+            加入购物车
+          </button>
+        </div>
+      </div>
     </el-dialog>
 
     <!-- ===== 报名名单弹窗 ===== -->
@@ -344,8 +363,10 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 
 const apiUrl = import.meta.env.VITE_API_URL || ''
+const router = useRouter()
 const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 
 const isAdmin  = computed(() => currentUser.value?.authority === 0)
@@ -355,7 +376,7 @@ const canPost  = computed(() => isAdmin.value || isFarmer.value)
 
 // ── Tab ──
 const tabs = [
-  { label: '全部',     value: 0 },
+  { label: '全部', value: 0 },
   { label: '好物推荐', value: 1 },
   { label: '助农任务', value: 2 },
 ]
@@ -380,9 +401,12 @@ const signupList        = ref([])
 const postDialogVisible = ref(false)
 const postSubmitting    = ref(false)
 const postFormRef       = ref(null)
+const approvedProducts  = ref([]) // 农户已审核通过的商品
+
 const postForm = ref({
   type: 1, title: '', content: '', image: '',
-  reward: '', start_time: '', end_time: '', location: '', max_people: 1
+  reward: '', start_time: '', end_time: '', location: '', max_people: 1,
+  selectedProductIds: []
 })
 
 const postRules = {
@@ -397,6 +421,10 @@ const postRules = {
   max_people: [{ required: true, type: 'number', message: '请输入招募人数', trigger: 'blur' }],
 }
 
+// ── 商品详情弹窗 ──
+const productDetailVisible = ref(false)
+const selectedProduct      = ref(null)
+
 // ── 获取帖子列表 ──
 const fetchPosts = async () => {
   loading.value = true
@@ -404,21 +432,33 @@ const fetchPosts = async () => {
     const params = { page: currentPage.value, limit: pageSize.value }
     if (activeTab.value !== 0) params.type = activeTab.value
     const res = await axios.get(`${apiUrl}/community/posts`, { params })
-    // 为每条帖子注入当前用户是否点赞/报名（详情接口才有，列表先给默认值）
-    posts.value = (res.data.data || []).map(p => ({ ...p, _comments: null, is_liked: false, is_signed_up: false }))
+    posts.value = (res.data.data || []).map(p => ({ ...p, _comments: null, is_liked: false, is_signed_up: false, _products: [] }))
     total.value = res.data.total || 0
-    // 批量拉取每条帖子的点赞/报名状态
-    if (currentUser.value?.id) {
-      posts.value.forEach(async (post) => {
+
+    // 批量拉取点赞/报名状态 + 解析附带商品
+    posts.value.forEach(async (post) => {
+      // 加载附带商品
+      if (post.product_ids) {
+        const ids = post.product_ids.split(',').map(id => parseInt(id.trim())).filter(Boolean)
+        if (ids.length) {
+          try {
+            const pRes = await axios.get(`${apiUrl}/tables/products`)
+            const allProds = pRes.data.data || []
+            post._products = allProds.filter(p => ids.includes(p.id))
+          } catch {}
+        }
+      }
+      // 点赞/报名状态
+      if (currentUser.value?.id) {
         try {
           const detail = await axios.get(`${apiUrl}/community/posts/${post.id}`, {
             params: { user_id: currentUser.value.id }
           })
-          post.is_liked      = detail.data.data.is_liked
-          post.is_signed_up  = detail.data.data.is_signed_up
+          post.is_liked     = detail.data.data.is_liked
+          post.is_signed_up = detail.data.data.is_signed_up
         } catch {}
-      })
-    }
+      }
+    })
   } catch {
     ElMessage.error('获取帖子列表失败')
   } finally {
@@ -432,35 +472,61 @@ const switchTab = (val) => {
   fetchPosts()
 }
 
+// ── 加载农户已审核通过的商品 ──
+const loadApprovedProducts = async () => {
+  if (!isFarmer.value && !isAdmin.value) return
+  try {
+    const res = await axios.get(`${apiUrl}/farmer/products/approved`, {
+      params: { farmer_id: currentUser.value.id }
+    })
+    approvedProducts.value = res.data.data || []
+  } catch {}
+}
+
+const toggleProductSelect = (id) => {
+  const idx = postForm.value.selectedProductIds.indexOf(id)
+  if (idx === -1) postForm.value.selectedProductIds.push(id)
+  else postForm.value.selectedProductIds.splice(idx, 1)
+}
+
+// ── 商品详情弹窗 ──
+const openProductDetail = (prod) => {
+  selectedProduct.value = prod
+  productDetailVisible.value = true
+}
+
+const addToCartFromPost = (prod) => {
+  // 跳转商城首页并加入购物车（通过 query 传参或 localStorage）
+  ElMessage.success(`已将「${prod.name}」加入购物车，前往商城结算`)
+  // 存到 sessionStorage，首页读取
+  const cart = JSON.parse(sessionStorage.getItem('pendingCart') || '[]')
+  const ex = cart.find(i => i.id === prod.id)
+  if (ex) ex.quantity++
+  else cart.push({ id: prod.id, name: prod.name, price: prod.price, quantity: 1 })
+  sessionStorage.setItem('pendingCart', JSON.stringify(cart))
+  productDetailVisible.value = false
+}
+
 // ── 点赞 ──
 const toggleLike = async (post) => {
   if (!currentUser.value?.id) return ElMessage.warning('请先登录')
   try {
-    const res = await axios.post(`${apiUrl}/community/posts/${post.id}/like`, {
-      user_id: currentUser.value.id
-    })
+    const res = await axios.post(`${apiUrl}/community/posts/${post.id}/like`, { user_id: currentUser.value.id })
     post.is_liked   = res.data.liked
     post.like_count += res.data.liked ? 1 : -1
-  } catch {
-    ElMessage.error('操作失败')
-  }
+  } catch { ElMessage.error('操作失败') }
 }
 
 // ── 评论 ──
 const openComment = async (post) => {
-  if (commentPostId.value === post.id) {
-    commentPostId.value = null
-    return
-  }
+  if (commentPostId.value === post.id) { commentPostId.value = null; return }
   commentPostId.value = post.id
   commentText.value   = ''
   if (!post._comments) {
     try {
       const res = await axios.get(`${apiUrl}/community/posts/${post.id}/comments`)
       post._comments = res.data.data || []
-    } catch {
-      post._comments = []
-    }
+    } catch { post._comments = [] }
   }
 }
 
@@ -469,18 +535,14 @@ const submitComment = async (post) => {
   if (!currentUser.value?.id) return ElMessage.warning('请先登录')
   try {
     await axios.post(`${apiUrl}/community/posts/${post.id}/comments`, {
-      user_id: currentUser.value.id,
-      content: commentText.value.trim()
+      user_id: currentUser.value.id, content: commentText.value.trim()
     })
     post.comment_count++
-    // 重新拉取评论列表
     const res = await axios.get(`${apiUrl}/community/posts/${post.id}/comments`)
     post._comments = res.data.data || []
     commentText.value = ''
     ElMessage.success('评论成功')
-  } catch {
-    ElMessage.error('评论失败')
-  }
+  } catch { ElMessage.error('评论失败') }
 }
 
 const deleteComment = async (post, comment) => {
@@ -492,9 +554,7 @@ const deleteComment = async (post, comment) => {
     post._comments    = post._comments.filter(c => c.id !== comment.id)
     post.comment_count = Math.max(0, post.comment_count - 1)
     ElMessage.success('删除成功')
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
-  }
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
 // ── 删除帖子 ──
@@ -506,9 +566,7 @@ const deletePost = async (post) => {
     })
     posts.value = posts.value.filter(p => p.id !== post.id)
     ElMessage.success('删除成功')
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
-  }
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
 // ── 报名 ──
@@ -516,32 +574,23 @@ const signup = async (post) => {
   if (!currentUser.value?.id) return ElMessage.warning('请先登录')
   try {
     await ElMessageBox.confirm(`确定报名「${post.title}」吗？`, '提示', { type: 'info' })
-    await axios.post(`${apiUrl}/community/posts/${post.id}/signup`, {
-      user_id: currentUser.value.id
-    })
+    await axios.post(`${apiUrl}/community/posts/${post.id}/signup`, { user_id: currentUser.value.id })
     post.is_signed_up = true
     post.signup_count++
     ElMessage.success('报名成功！')
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e?.response?.data?.message || '报名失败')
-  }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e?.response?.data?.message || '报名失败') }
 }
 
 const cancelSignup = async (post) => {
   try {
     await ElMessageBox.confirm('确定取消报名吗？', '提示', { type: 'warning' })
-    await axios.delete(`${apiUrl}/community/posts/${post.id}/signup`, {
-      data: { user_id: currentUser.value.id }
-    })
+    await axios.delete(`${apiUrl}/community/posts/${post.id}/signup`, { data: { user_id: currentUser.value.id } })
     post.is_signed_up = false
     post.signup_count = Math.max(0, post.signup_count - 1)
     ElMessage.success('已取消报名')
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('取消失败')
-  }
+  } catch (e) { if (e !== 'cancel') ElMessage.error('取消失败') }
 }
 
-// ── 查看报名名单 ──
 const openSignupList = async (post) => {
   try {
     const res = await axios.get(`${apiUrl}/community/posts/${post.id}/signups`, {
@@ -549,17 +598,14 @@ const openSignupList = async (post) => {
     })
     signupList.value        = res.data.data || []
     signupListVisible.value = true
-  } catch {
-    ElMessage.error('获取报名名单失败')
-  }
+  } catch { ElMessage.error('获取报名名单失败') }
 }
 
 // ── 发帖 ──
-const openPostDialog = () => {
-  postForm.value = {
-    type: 1, title: '', content: '', image: '',
-    reward: '', start_time: '', end_time: '', location: '', max_people: 1
-  }
+const openPostDialog = async () => {
+  postForm.value = { type: 1, title: '', content: '', image: '',
+    reward: '', start_time: '', end_time: '', location: '', max_people: 1, selectedProductIds: [] }
+  await loadApprovedProducts()
   postDialogVisible.value = true
 }
 
@@ -571,16 +617,11 @@ const handleImageChange = (file) => {
 
 const submitPost = async () => {
   if (!postFormRef.value) return
-  // 动态校验：只有 type=2 才校验任务字段
   const rulesToValidate = ['type', 'title', 'content']
   if (postForm.value.type === 2) {
     rulesToValidate.push('reward', 'start_time', 'end_time', 'location', 'max_people')
   }
-  try {
-    await postFormRef.value.validateField(rulesToValidate)
-  } catch {
-    return
-  }
+  try { await postFormRef.value.validateField(rulesToValidate) } catch { return }
   postSubmitting.value = true
   try {
     await axios.post(`${apiUrl}/community/posts`, {
@@ -594,16 +635,15 @@ const submitPost = async () => {
       end_time:   postForm.value.type === 2 ? postForm.value.end_time   : null,
       location:   postForm.value.type === 2 ? postForm.value.location   : null,
       max_people: postForm.value.type === 2 ? postForm.value.max_people : null,
+      product_ids: postForm.value.selectedProductIds.length
+        ? postForm.value.selectedProductIds.join(',') : null,
     })
     ElMessage.success('发布成功')
     postDialogVisible.value = false
     currentPage.value = 1
     fetchPosts()
-  } catch {
-    ElMessage.error('发布失败')
-  } finally {
-    postSubmitting.value = false
-  }
+  } catch { ElMessage.error('发布失败') }
+  finally { postSubmitting.value = false }
 }
 
 // ── 权限判断 ──
@@ -625,7 +665,6 @@ const progressWidth = (post) => {
   if (!post.max_people) return 0
   return Math.min(Math.round((post.signup_count / post.max_people) * 100), 100)
 }
-
 const statusText = (post) => {
   if (post.status === 0) return '已下架'
   if (post.status === 2) return '已结束'
@@ -637,11 +676,9 @@ const statusClass = (post) => {
   if (post.signup_count >= post.max_people)   return 'tag-full'
   return 'tag-open'
 }
-
 const formatTime = (t) => {
   if (!t) return ''
-  const d = new Date(t)
-  const now = new Date()
+  const d = new Date(t), now = new Date()
   const diff = Math.floor((now - d) / 1000)
   if (diff < 60)     return '刚刚'
   if (diff < 3600)   return Math.floor(diff / 60) + '分钟前'
@@ -653,8 +690,7 @@ const formatDate = (t) => {
   if (!t) return '—'
   return new Date(t).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
-
-const avatarColors = ['#C0DD97,#3B6D11', '#B5D4F4,#185FA5', '#F5C4B3,#993C1D', '#CECBF6,#3C3489', '#9FE1CB,#0F6E56', '#FAC775,#854F0B']
+const avatarColors = ['#C0DD97,#3B6D11','#B5D4F4,#185FA5','#F5C4B3,#993C1D','#CECBF6,#3C3489','#9FE1CB,#0F6E56','#FAC775,#854F0B']
 const avatarStyle = (name) => {
   const idx = name ? name.charCodeAt(0) % avatarColors.length : 0
   const [bg, color] = avatarColors[idx].split(',')
@@ -672,391 +708,179 @@ onMounted(fetchPosts)
 }
 
 // ── 顶部栏 ──
-.community-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.header-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: #1a2e1a;
-  margin: 0 0 2px;
-}
-.header-sub {
-  font-size: 13px;
-  color: #7a9a7a;
-  margin: 0;
-}
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.tabs {
-  display: flex;
-  background: #f3f6f3;
-  border-radius: 10px;
-  padding: 3px;
-  gap: 2px;
-}
+.community-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+.header-title { font-size: 22px; font-weight: 600; color: #1a2e1a; margin: 0 0 2px; }
+.header-sub   { font-size: 13px; color: #7a9a7a; margin: 0; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.tabs { display: flex; background: #f3f6f3; border-radius: 10px; padding: 3px; gap: 2px; }
 .tab-btn {
-  padding: 6px 16px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  color: #7a9a7a;
-  font-family: inherit;
-  transition: all .15s;
-  &.active {
-    background: white;
-    color: #1a2e1a;
-    font-weight: 500;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  }
+  padding: 6px 16px; border: none; background: transparent; border-radius: 8px;
+  font-size: 13px; cursor: pointer; color: #7a9a7a; font-family: inherit; transition: all .15s;
+  &.active { background: white; color: #1a2e1a; font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 }
-.post-btn {
-  height: 34px;
-}
+.post-btn { height: 34px; }
 
 // ── 帖子列表 ──
-.post-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 200px;
-}
+.post-list { display: flex; flex-direction: column; gap: 14px; min-height: 200px; }
 
 // ── 通用卡片 ──
 .post-card {
-  background: white;
-  border-radius: 14px;
-  border: 0.5px solid #e8ede8;
-  overflow: hidden;
+  background: white; border-radius: 14px; border: 0.5px solid #e8ede8; overflow: hidden;
   transition: border-color .15s, box-shadow .15s;
-  &:hover {
-    border-color: #c8d8c8;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-  }
+  &:hover { border-color: #c8d8c8; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
 }
 
-// ── 好物推荐卡片 ──
-.goods-card .card-main {
-  display: flex;
-  gap: 0;
-  padding: 18px 20px 14px;
-}
-.card-left {
-  flex: 1;
-  min-width: 0;
-}
-.card-img-wrap {
-  width: 110px;
-  height: 110px;
-  flex-shrink: 0;
-  margin-left: 16px;
+// ── 好物推荐 ──
+.goods-card .card-main { display: flex; gap: 0; padding: 18px 20px 14px; }
+.card-left { flex: 1; min-width: 0; }
+.card-img-wrap { width: 110px; height: 110px; flex-shrink: 0; margin-left: 16px; border-radius: 10px; overflow: hidden; }
+.card-img { width: 100%; height: 100%; object-fit: cover; }
+
+// ── 附带商品 ──
+.attached-products {
+  margin: 12px 0 4px;
+  background: #faf9f6;
   border-radius: 10px;
-  overflow: hidden;
-}
-.card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  padding: 10px 12px;
+  border: 1px solid #eeebe4;
 }
 
-// ── 助农任务卡片 ──
-.task-card .task-main {
-  padding: 18px 20px 14px;
+.ap-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: #2d6a45;
+  letter-spacing: .5px; text-transform: uppercase;
+  margin-bottom: 8px;
 }
-.task-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin: 10px 0;
+
+.ap-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ap-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; background: white; border-radius: 8px;
+  border: 1px solid #eeebe4; cursor: pointer;
+  transition: all .15s;
+  &:hover { border-color: #b8d8c0; background: #f0faf4; transform: translateX(2px); }
 }
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #7a9a7a;
-}
-.reward-text {
-  color: #BA7517;
-  font-weight: 500;
-}
-.signup-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0 2px;
-}
-.progress-bar-bg {
-  flex: 1;
-  height: 5px;
-  background: #f0f4f0;
-  border-radius: 3px;
-  overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%;
-  background: #42b983;
-  border-radius: 3px;
-  transition: width .3s;
-}
-.progress-text {
-  font-size: 12px;
-  color: #7a9a7a;
-  white-space: nowrap;
-}
+
+.ap-img { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.ap-no-img { width: 40px; height: 40px; border-radius: 6px; background: #f5f3ee; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+
+.ap-info { flex: 1; min-width: 0; }
+.ap-name  { font-size: 13px; font-weight: 500; color: #1a1a12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
+.ap-price { font-size: 12px; color: #BA7517; font-weight: 600; }
+.ap-arrow { font-size: 16px; color: #c0c0b0; flex-shrink: 0; }
+
+// ── 助农任务 ──
+.task-card .task-main { padding: 18px 20px 14px; }
+.task-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0; }
+.meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #7a9a7a; }
+.reward-text { color: #BA7517; font-weight: 500; }
+.signup-progress { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; }
+.progress-bar-bg { flex: 1; height: 5px; background: #f0f4f0; border-radius: 3px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: #42b983; border-radius: 3px; transition: width .3s; }
+.progress-text { font-size: 12px; color: #7a9a7a; white-space: nowrap; }
 
 // ── 通用行 ──
-.author-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-.avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-.author-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex: 1;
-  min-width: 0;
-}
-.author-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: #2a3a2a;
-}
-.post-time {
-  font-size: 11px;
-  color: #aaa;
-}
-.type-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 8px;
-  font-weight: 500;
-}
-.goods-tag {
-  background: #EAF3DE;
-  color: #3B6D11;
-}
-.task-tag {
-  background: #E6F1FB;
-  color: #185FA5;
-}
-.status-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 8px;
-  font-weight: 500;
-}
-.tag-open   { background: #EAF3DE; color: #3B6D11; }
-.tag-full   { background: #F1EFE8; color: #5F5E5A; }
-.tag-ended  { background: #FCEBEB; color: #A32D2D; }
-
-.post-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a2e1a;
-  margin-bottom: 6px;
-  line-height: 1.4;
-}
-.post-content {
-  font-size: 13px;
-  color: #4a6a4a;
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+.author-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.author-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.author-name { font-size: 13px; font-weight: 500; color: #2a3a2a; }
+.post-time   { font-size: 11px; color: #aaa; }
+.type-tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
+.goods-tag { background: #EAF3DE; color: #3B6D11; }
+.task-tag  { background: #E6F1FB; color: #185FA5; }
+.status-tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
+.tag-open  { background: #EAF3DE; color: #3B6D11; }
+.tag-full  { background: #F1EFE8; color: #5F5E5A; }
+.tag-ended { background: #FCEBEB; color: #A32D2D; }
+.post-title   { font-size: 15px; font-weight: 600; color: #1a2e1a; margin-bottom: 6px; line-height: 1.4; }
+.post-content { font-size: 13px; color: #4a6a4a; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 // ── 操作行 ──
-.action-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
+.action-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .action-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #7a9a7a;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-family: inherit;
-  transition: all .15s;
+  display: flex; align-items: center; gap: 4px; font-size: 12px; color: #7a9a7a;
+  background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  font-family: inherit; transition: all .15s;
   &:hover { background: #f3f6f3; color: #2d8a5e; }
   &.liked { color: #E24B4A; }
-  &.delete-btn {
-    color: #E24B4A;
-    margin-left: auto;
-    &:hover { background: #FCEBEB; }
-  }
+  &.delete-btn { color: #E24B4A; margin-left: auto; &:hover { background: #FCEBEB; } }
 }
 
 // ── 评论区 ──
-.comment-section {
-  border-top: 0.5px solid #f0f4f0;
-  background: #fafcfa;
-  padding: 14px 20px 16px;
-}
-.comment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.comment-item {
-  display: flex;
-  gap: 8px;
-}
-.c-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 500;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
+.comment-section { border-top: 0.5px solid #f0f4f0; background: #fafcfa; padding: 14px 20px 16px; }
+.comment-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.comment-item { display: flex; gap: 8px; }
+.c-avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 2px; }
 .c-body { flex: 1; min-width: 0; }
-.c-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
-}
+.c-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .c-name { font-size: 12px; font-weight: 500; color: #2a3a2a; }
 .c-time { font-size: 11px; color: #bbb; }
-.c-del-btn {
-  margin-left: auto;
-  font-size: 11px;
-  color: #E24B4A;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  font-family: inherit;
-  &:hover { text-decoration: underline; }
-}
+.c-del-btn { margin-left: auto; font-size: 11px; color: #E24B4A; background: none; border: none; cursor: pointer; padding: 0; font-family: inherit; &:hover { text-decoration: underline; } }
 .c-content { font-size: 13px; color: #4a6a4a; line-height: 1.5; }
-.no-comment {
-  font-size: 12px;
-  color: #bbb;
-  text-align: center;
-  padding: 12px 0;
-  margin-bottom: 10px;
-}
-.comment-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
+.no-comment { font-size: 12px; color: #bbb; text-align: center; padding: 12px 0; margin-bottom: 10px; }
+.comment-input-row { display: flex; gap: 8px; align-items: center; }
 
 // ── 分页 ──
-.pagination-wrap {
-  display: flex;
-  justify-content: center;
-  margin-top: 24px;
-}
+.pagination-wrap { display: flex; justify-content: center; margin-top: 24px; }
 
 // ── 发帖弹窗 ──
-.upload-area {
-  width: 120px;
-  height: 120px;
-  border: 1px dashed #d0d8d0;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: hidden;
-  transition: border-color .15s;
-  &:hover { border-color: #42b983; }
+.upload-area { width: 120px; height: 120px; border: 1px dashed #d0d8d0; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color .15s; &:hover { border-color: #42b983; } }
+.upload-preview { width: 100%; height: 100%; object-fit: cover; }
+.upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #aaa; font-size: 12px; }
+
+// ── 商品选择器 ──
+.product-picker {}
+.no-products { font-size: 12px; color: #b0b0a0; padding: 8px 0; }
+.product-pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.pick-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  border: 1.5px solid #eeebe4; cursor: pointer; transition: all .15s; position: relative;
+  &:hover { border-color: #b8d8c0; background: #f8fcf8; }
+  &.selected { border-color: #2d6a45; background: #f0faf4; }
 }
-.upload-preview {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.upload-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  color: #aaa;
-  font-size: 12px;
-}
+.pick-img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.pick-no-img { width: 36px; height: 36px; border-radius: 6px; background: #f5f3ee; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.pick-info { flex: 1; min-width: 0; }
+.pick-name  { font-size: 12px; font-weight: 500; color: #1a1a12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-price { font-size: 11px; color: #BA7517; }
+.pick-check { width: 18px; height: 18px; border-radius: 50%; background: #2d6a45; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.selected-tip { font-size: 11px; color: #2d6a45; font-weight: 500; margin-top: 6px; }
 
 // ── 报名名单 ──
-.signup-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.signup-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 0.5px solid #f0f4f0;
-  &:last-child { border-bottom: none; }
-}
-.signup-no {
-  font-size: 12px;
-  color: #bbb;
-  width: 18px;
-  text-align: center;
-  flex-shrink: 0;
-}
-.signup-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-.signup-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+.signup-list { display: flex; flex-direction: column; gap: 10px; }
+.signup-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid #f0f4f0; &:last-child { border-bottom: none; } }
+.signup-no { font-size: 12px; color: #bbb; width: 18px; text-align: center; flex-shrink: 0; }
+.signup-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.signup-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .signup-name { font-size: 13px; font-weight: 500; color: #2a3a2a; }
 .signup-tel  { font-size: 12px; color: #7a9a7a; }
 .signup-time { font-size: 11px; color: #bbb; white-space: nowrap; }
+
+// ── 商品详情弹窗 ──
+.product-detail { display: flex; flex-direction: column; gap: 16px; }
+.pd-img-wrap { width: 100%; height: 200px; border-radius: 10px; overflow: hidden; background: #f5f3ee; display: flex; align-items: center; justify-content: center; }
+.pd-img { width: 100%; height: 100%; object-fit: cover; }
+.pd-no-img { font-size: 60px; }
+.pd-info {}
+.pd-name { font-size: 18px; font-weight: 600; color: #1a1a12; margin: 0 0 10px; }
+.pd-price-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.pd-price  { font-size: 24px; font-weight: 700; color: #BA7517; }
+.pd-origin { font-size: 14px; color: #c8c8b8; text-decoration: line-through; }
+.pd-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.pd-meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #7a7a6a; }
+.pd-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.pd-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.tag-热销 { background: #FAECE7; color: #993C1D; }
+.tag-新品 { background: #EAF3DE; color: #3B6D11; }
+.tag-推荐 { background: #E6F1FB; color: #185FA5; }
+.pd-actions { padding-top: 4px; }
+.pd-cart-btn {
+  width: 100%; padding: 12px; border: none; border-radius: 8px;
+  background: #1a3a22; color: white; font-size: 14px; font-weight: 500;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: 'Inter', sans-serif; transition: background .15s;
+  &:hover { background: #2d6a45; }
+}
 </style>

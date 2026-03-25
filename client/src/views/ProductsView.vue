@@ -4,12 +4,36 @@
     <div class="page-header">
       <div>
         <div class="page-eyebrow">Product Management</div>
-        <h2 class="page-title">农产品管理</h2>
+        <h2 class="page-title">{{ isAdmin ? '农产品审核管理' : '我的农产品' }}</h2>
       </div>
-      <button class="add-btn" @click="showAddDialog">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/></svg>
-        新增产品
-      </button>
+      <div class="header-actions">
+        <!-- 管理员：审核状态筛选 -->
+        <div v-if="isAdmin" class="audit-tabs">
+          <button
+            v-for="t in auditTabs" :key="t.value"
+            :class="['audit-tab', { active: auditFilter === t.value }]"
+            @click="auditFilter = t.value; fetchProducts()"
+          >
+            {{ t.label }}
+            <span v-if="t.value !== -1" class="tab-count">{{ auditCount(t.value) }}</span>
+          </button>
+        </div>
+        <!-- 农户：新增按钮 -->
+        <button v-if="!isAdmin" class="add-btn" @click="showAddDialog">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+            <line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/>
+          </svg>
+          上架新产品
+        </button>
+      </div>
+    </div>
+
+    <!-- 审核提示（农户） -->
+    <div v-if="!isAdmin && pendingCount > 0" class="audit-notice">
+      <svg viewBox="0 0 16 16" fill="none" stroke="#854F0B" stroke-width="1.5" width="14" height="14">
+        <circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="9"/><circle cx="8" cy="11" r="0.6" fill="#854F0B" stroke="none"/>
+      </svg>
+      你有 <b>{{ pendingCount }}</b> 件商品正在等待管理员审核
     </div>
 
     <!-- 商品表格 -->
@@ -41,18 +65,46 @@
             <span class="cat-badge">{{ getCategoryName(row.categoryId) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="sales" label="销量" width="80"/>
-        <el-table-column label="标签" width="120">
+        <!-- 管理员显示农户 -->
+        <el-table-column v-if="isAdmin" label="上架农户" width="130">
           <template #default="{ row }">
-            <div class="tag-wrap">
-              <span v-for="t in (Array.isArray(row.tags) ? row.tags : [])" :key="t" :class="['tag', 'tag-' + t]">{{ t }}</span>
-            </div>
+            <span class="farmer-name">{{ row.farmer_nick || row.farmer_name || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column prop="sales" label="销量" width="70"/>
+        <el-table-column label="审核状态" width="110">
           <template #default="{ row }">
-            <button class="tbl-btn edit" @click="handleEdit(row)">编辑</button>
-            <button class="tbl-btn del"  @click="handleDelete(row)">删除</button>
+            <span :class="['audit-badge', 'audit-' + (row.audit_status ?? 0)]">
+              {{ auditLabel(row.audit_status) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <!-- 管理员：审核操作 -->
+            <template v-if="isAdmin">
+              <button
+                v-if="row.audit_status !== 1"
+                class="tbl-btn approve"
+                @click="handleAudit(row, 1)"
+              >通过</button>
+              <button
+                v-if="row.audit_status !== 2"
+                class="tbl-btn reject"
+                @click="handleAudit(row, 2)"
+              >拒绝</button>
+              <button class="tbl-btn del" @click="handleDelete(row)">删除</button>
+            </template>
+            <!-- 农户：编辑/删除（仅待审核或已拒绝可编辑） -->
+            <template v-else>
+              <button
+                class="tbl-btn edit"
+                :disabled="row.audit_status === 1"
+                :title="row.audit_status === 1 ? '已通过审核，不可修改' : ''"
+                @click="handleEdit(row)"
+              >编辑</button>
+              <button class="tbl-btn del" @click="handleDelete(row)">删除</button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -60,7 +112,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
-      :title="dialogType === 'add' ? '新增产品' : '编辑产品'"
+      :title="dialogType === 'add' ? '上架新产品' : '编辑产品'"
       v-model="dialogVisible" width="520px" class="art-dialog"
     >
       <el-form :model="form" :rules="rules" ref="formRef" label-width="0" class="dialog-form">
@@ -123,10 +175,16 @@
             </el-form-item>
           </div>
         </div>
+        <div class="submit-tip">
+          <svg viewBox="0 0 14 14" fill="none" stroke="#854F0B" stroke-width="1.5" width="13" height="13">
+            <circle cx="7" cy="7" r="5.5"/><line x1="7" y1="4.5" x2="7" y2="8"/><circle cx="7" cy="9.5" r="0.5" fill="#854F0B" stroke="none"/>
+          </svg>
+          提交后将进入审核队列，管理员审核通过后自动上架至商城
+        </div>
       </el-form>
       <template #footer>
         <button class="dialog-cancel" @click="dialogVisible = false">取消</button>
-        <button class="dialog-confirm" @click="handleSubmit">{{ dialogType === 'add' ? '发布' : '保存' }}</button>
+        <button class="dialog-confirm" @click="handleSubmit">{{ dialogType === 'add' ? '提交审核' : '保存修改' }}</button>
       </template>
     </el-dialog>
 
@@ -134,13 +192,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const apiUrl = import.meta.env.VITE_API_URL
+const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
+const isAdmin = computed(() => currentUser.value?.authority === 0)
+const isFarmer = computed(() => currentUser.value?.authority === 1)
+
 const loading       = ref(false)
 const products      = ref([])
+const auditFilter   = ref(-1) // -1=全部
 const dialogVisible = ref(false)
 const dialogType    = ref('add')
 const formRef       = ref(null)
@@ -150,11 +213,21 @@ const imageFile     = ref(null)
 const form = ref({ name:'', price:0, originalPrice:0, categoryId:'', image:'', tags:[], sales:0, amount:'' })
 
 const rules = {
-  name:        [{ required:true, message:'请输入产品名称', trigger:'blur' }],
-  price:       [{ required:true, message:'请输入价格',     trigger:'change' }],
-  originalPrice:[{ required:true, message:'请输入原价',   trigger:'change' }],
-  categoryId:  [{ required:true, message:'请选择分类',     trigger:'change' }],
+  name:         [{ required:true, message:'请输入产品名称', trigger:'blur' }],
+  price:        [{ required:true, message:'请输入价格', trigger:'change' }],
+  originalPrice:[{ required:true, message:'请输入原价', trigger:'change' }],
+  categoryId:   [{ required:true, message:'请选择分类', trigger:'change' }],
 }
+
+const auditTabs = [
+  { label:'全部', value:-1 },
+  { label:'待审核', value:0 },
+  { label:'已通过', value:1 },
+  { label:'已拒绝', value:2 },
+]
+
+const auditCount = (status) => products.value.filter(p => p.audit_status === status).length
+const pendingCount = computed(() => products.value.filter(p => p.audit_status === 0).length)
 
 const categoryOptions = [
   { id:1, name:'水果' },{ id:2, name:'蔬菜' },{ id:3, name:'粮油' },
@@ -165,13 +238,35 @@ const categoryOptions = [
 const categoryMap = Object.fromEntries(categoryOptions.map(c => [c.id, c.name]))
 const getCategoryName = (id) => categoryMap[id] || '未知'
 
+const auditLabel = (s) => ({ 0:'待审核', 1:'已通过', 2:'已拒绝' }[s ?? 0] ?? '待审核')
+
 const fetchProducts = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${apiUrl}/tables/products`)
-    products.value = res.data.data || []
+    let res
+    if (isAdmin.value) {
+      // 管理员：调用审核接口，可按状态筛选
+      const params = auditFilter.value !== -1 ? { audit_status: auditFilter.value } : {}
+      res = await axios.get(`${apiUrl}/products/audit`, { params })
+      products.value = res.data.data || []
+    } else {
+      // 农户：获取自己的商品
+      res = await axios.get(`${apiUrl}/farmer/products`, { params: { farmer_id: currentUser.value.id } })
+      products.value = res.data.data || []
+    }
   } catch { ElMessage.error('获取产品列表失败') }
   finally { loading.value = false }
+}
+
+// 管理员审核
+const handleAudit = async (row, status) => {
+  const label = status === 1 ? '通过' : '拒绝'
+  try {
+    await ElMessageBox.confirm(`确定${label}商品「${row.name}」吗？`, '审核确认', { type: status === 1 ? 'info' : 'warning' })
+    await axios.put(`${apiUrl}/products/${row.id}/audit`, { audit_status: status })
+    ElMessage.success(`已${label}`)
+    fetchProducts()
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
 }
 
 const handleImageChange = (file) => {
@@ -197,8 +292,9 @@ const showAddDialog = () => {
 }
 
 const handleEdit = (row) => {
+  if (row.audit_status === 1) return ElMessage.warning('已审核通过的商品不可修改')
   dialogType.value = 'edit'
-  form.value = { ...row }
+  form.value = { ...row, tags: Array.isArray(row.tags) ? row.tags : [] }
   imageUrl.value  = row.image
   imageFile.value = null
   dialogVisible.value = true
@@ -210,7 +306,7 @@ const handleDelete = async (row) => {
     await ElMessageBox.confirm('确认删除该产品吗？', '提示', { type:'warning' })
     await axios.delete(`${apiUrl}/tables/products/${row.id}`)
     ElMessage.success('删除成功')
-    await fetchProducts()
+    fetchProducts()
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
@@ -225,14 +321,18 @@ const handleSubmit = async () => {
       return
     }
     if (dialogType.value === 'add') {
-      await axios.post(`${apiUrl}/tables/products`, form.value)
-      ElMessage.success('发布成功')
+      // 农户上架，调用新接口，附带 farmer_id
+      await axios.post(`${apiUrl}/farmer/products`, {
+        ...form.value,
+        farmer_id: currentUser.value.id
+      })
+      ElMessage.success('已提交，等待管理员审核')
     } else {
       await axios.put(`${apiUrl}/tables/products/${form.value.id}`, form.value)
       ElMessage.success('更新成功')
     }
     dialogVisible.value = false
-    await fetchProducts()
+    fetchProducts()
   } catch (e) { if (e?.message) ElMessage.error('表单验证失败') }
 }
 
@@ -252,6 +352,9 @@ onMounted(fetchProducts)
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .page-eyebrow {
@@ -270,6 +373,43 @@ onMounted(fetchProducts)
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.audit-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.audit-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border: 1px solid #e8e5de;
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+  color: #6a6a5a;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all .15s;
+  &:hover { border-color: #b8d8c0; color: #2d6a45; }
+  &.active { background: #1a3a22; border-color: #1a3a22; color: #f0ede8; }
+}
+
+.tab-count {
+  background: rgba(255,255,255,0.2);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+  .audit-tab:not(.active) & { background: #f0f0e8; color: #9a9a8a; }
+}
+
 .add-btn {
   display: flex;
   align-items: center;
@@ -284,7 +424,23 @@ onMounted(fetchProducts)
   cursor: pointer;
   font-family: 'Inter', sans-serif;
   transition: background .2s;
+  white-space: nowrap;
   &:hover { background: #2d6a45; }
+}
+
+/* 审核提示横幅 */
+.audit-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #FAEEDA;
+  border: 1px solid #F5C885;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #854F0B;
+  margin-bottom: 16px;
+  b { font-weight: 600; }
 }
 
 .table-card {
@@ -297,6 +453,7 @@ onMounted(fetchProducts)
 .art-table {
   :deep(th.el-table__cell) { background: #faf9f6 !important; font-size: 11px; color: #9a9a8a; font-weight: 500; letter-spacing: .5px; }
   :deep(td.el-table__cell) { font-size: 13px; }
+  :deep(.el-button.is-disabled) { opacity: .4; }
 }
 
 .prod-img-wrap {
@@ -305,17 +462,11 @@ onMounted(fetchProducts)
   overflow: hidden;
   border: 1px solid #eeebe4;
 }
-
-.prod-img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-}
-
+.prod-img { width: 100%; height: 100%; object-fit: cover; }
 .prod-img-empty {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; color: #b0b0a0;
-  background: #f5f3ee;
+  font-size: 10px; color: #b0b0a0; background: #f5f3ee;
 }
 
 .money       { color: #BA7517; font-weight: 600; font-size: 13px; }
@@ -330,17 +481,18 @@ onMounted(fetchProducts)
   font-weight: 500;
 }
 
-.tag-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.farmer-name { font-size: 12px; color: #4a4a3a; }
 
-.tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
+/* 审核状态徽章 */
+.audit-badge {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 20px;
   font-weight: 500;
 }
-.tag-热销 { background: #FAECE7; color: #993C1D; }
-.tag-新品 { background: #EAF3DE; color: #3B6D11; }
-.tag-推荐 { background: #E6F1FB; color: #185FA5; }
+.audit-0 { background: #FAEEDA; color: #854F0B; }
+.audit-1 { background: #EAF3DE; color: #3B6D11; }
+.audit-2 { background: #FCEBEB; color: #A32D2D; }
 
 .tbl-btn {
   padding: 4px 10px;
@@ -351,10 +503,14 @@ onMounted(fetchProducts)
   font-family: 'Inter', sans-serif;
   transition: all .15s;
   margin-right: 5px;
-  &.edit { border-color: #b8d8c0; color: #2d6a45; background: #f0faf4; &:hover { background: #2d6a45; color: white; } }
-  &.del  { border-color: #F7C1C1; color: #A32D2D; background: #FCEBEB; &:hover { background: #A32D2D; color: white; } }
+  &.edit    { border-color: #b8d8c0; color: #2d6a45; background: #f0faf4; &:hover { background: #2d6a45; color: white; } }
+  &.approve { border-color: #b8d8c0; color: #3B6D11; background: #EAF3DE; &:hover { background: #2d6a45; color: white; } }
+  &.reject  { border-color: #F7C1C1; color: #A32D2D; background: #FCEBEB; &:hover { background: #A32D2D; color: white; } }
+  &.del     { border-color: #e0ddd6; color: #9a9a8a; background: white;   &:hover { background: #A32D2D; color: white; border-color: #A32D2D; } }
+  &:disabled { opacity: .4; cursor: not-allowed; }
 }
 
+/* 弹窗 */
 .art-dialog {
   :deep(.el-dialog__header) { border-bottom: 1px solid #eeebe4; padding-bottom: 14px; }
   :deep(.el-dialog__title) { font-family: 'Noto Serif SC', serif; font-size: 17px; font-weight: 400; }
@@ -409,19 +565,22 @@ onMounted(fetchProducts)
   transition: border-color .2s;
   &:hover { border-color: #2d6a45; }
 }
-
-.upload-preview {
-  width: 100%; height: 100%;
-  object-fit: cover;
+.upload-preview { width: 100%; height: 100%; object-fit: cover; }
+.upload-placeholder {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; color: #b0b0a0; font-size: 11px;
 }
 
-.upload-placeholder {
+.submit-tip {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  color: #b0b0a0;
-  font-size: 11px;
+  gap: 7px;
+  font-size: 12px;
+  color: #854F0B;
+  background: #FAEEDA;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 4px;
 }
 
 .dialog-cancel {
@@ -439,9 +598,5 @@ onMounted(fetchProducts)
   font-size: 13px; font-weight: 500; cursor: pointer;
   font-family: 'Inter', sans-serif;
   &:hover { background: #2d6a45; }
-}
-
-@media (max-width: 768px) {
-  .products-page { padding: 20px 16px; }
 }
 </style>

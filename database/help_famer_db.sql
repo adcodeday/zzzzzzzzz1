@@ -11,7 +11,7 @@
  Target Server Version : 80032 (8.0.32)
  File Encoding         : 65001
 
- Date: 25/03/2026 15:38:55
+ Date: 25/03/2026 16:36:07
 */
 
 SET NAMES utf8mb4;
@@ -39,6 +39,7 @@ CREATE TABLE `community_posts`  (
   `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态: 0=已下架  1=正常  2=已结束（任务）',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `product_ids` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '附带商品ID逗号分隔',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
   INDEX `idx_type`(`type` ASC) USING BTREE,
@@ -74,7 +75,7 @@ CREATE TABLE `orders`  (
   `user_id` int NULL DEFAULT NULL,
   `order_time` datetime NULL DEFAULT NULL,
   `order_amount` decimal(10, 2) NULL DEFAULT NULL,
-  `order_status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  `order_status` int NOT NULL DEFAULT 0,
   `goods` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `seller` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `buyer` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -150,6 +151,8 @@ CREATE TABLE `products`  (
   `categoryId` int NULL DEFAULT NULL,
   `tags` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
   `amount` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL,
+  `farmer_id` int NOT NULL DEFAULT 0 COMMENT '上架农户ID',
+  `audit_status` tinyint NOT NULL DEFAULT 0 COMMENT '0=待审核 1=通过 2=拒绝',
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 29 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci ROW_FORMAT = Dynamic;
 

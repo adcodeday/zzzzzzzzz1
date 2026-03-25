@@ -11,8 +11,8 @@
       </button>
       <nav :class="{ 'mobile-menu': isMobile, open: menuOpen }">
         <RouterLink to="/" @click="menuOpen = false">首页</RouterLink>
-        <RouterLink v-if="user.authority == 0" to="/products" @click="menuOpen = false">农产品管理</RouterLink>
-        <RouterLink v-if="user.authority == 0" to="/farmers" @click="menuOpen = false">农户管理</RouterLink>
+        <RouterLink v-if="user.authority == 0||user.authority == 1" to="/products" @click="menuOpen = false">农产品管理</RouterLink>
+        <RouterLink v-if="user.authority == 0" to="/farmers" @click="menuOpen = false">用户管理</RouterLink>
         <RouterLink to="/tasks" @click="menuOpen = false">助农社区</RouterLink>
         <RouterLink to="/orders" @click="menuOpen = false">订单管理</RouterLink>
         <RouterLink to="/statistics" @click="menuOpen = false">数据统计</RouterLink>

@@ -5,7 +5,9 @@
     <div class="page-header">
       <div class="header-left">
         <h2 class="page-title">订单管理</h2>
-        <p class="page-sub">{{ isAdmin ? '平台全部交易记录' : '我的购买记录' }}</p>
+        <p class="page-sub">
+          {{ isAdmin ? '平台全部交易记录' : isFarmer ? '购买我农产品的订单' : '我的购买记录' }}
+        </p>
       </div>
       <div class="header-right">
         <div class="search-wrap">
@@ -15,13 +17,15 @@
           <input v-model="searchKeyword" class="search-input" placeholder="搜索订单、商品、买家..."/>
         </div>
         <button v-if="isAdmin" class="add-btn" @click="handleAdd">
-          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/></svg>
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+            <line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/>
+          </svg>
           新增订单
         </button>
       </div>
     </div>
 
-    <!-- 统计卡片（非管理员） -->
+    <!-- 统计卡片（买家 / 农户） -->
     <div v-if="!isAdmin" class="stat-row">
       <div class="stat-card" v-for="s in stats" :key="s.label">
         <div class="stat-icon" :style="{ background: s.bg }">
@@ -34,7 +38,20 @@
       </div>
     </div>
 
-    <!-- 管理员：用户 + 展开订单表格 -->
+    <!-- 状态筛选 Tab -->
+    <div class="filter-tabs">
+      <button
+        v-for="t in statusTabs"
+        :key="t.value"
+        :class="['filter-tab', { active: activeStatus === t.value }]"
+        @click="activeStatus = t.value"
+      >
+        {{ t.label }}
+        <span v-if="t.value !== -1 && statusCount(t.value)" class="tab-count">{{ statusCount(t.value) }}</span>
+      </button>
+    </div>
+
+    <!-- 管理员：用户展开表格 -->
     <div v-if="isAdmin" class="table-wrap">
       <el-table :data="filteredUsers" border stripe v-loading="loading" class="art-table">
         <el-table-column type="expand">
@@ -55,7 +72,7 @@
                     <span class="money">¥{{ Number(row.order_amount).toFixed(2) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="状态" width="90">
+                <el-table-column label="状态" width="110">
                   <template #default="{ row }">
                     <span :class="['status-pill', 'status-' + row.order_status]">{{ statusText(row.order_status) }}</span>
                   </template>
@@ -63,7 +80,7 @@
                 <el-table-column label="操作" width="130" fixed="right">
                   <template #default="{ row }">
                     <button class="tbl-btn edit" @click="handleEdit(row)">编辑</button>
-                    <button class="tbl-btn del" @click="handleDelete(row)">删除</button>
+                    <button class="tbl-btn del"  @click="handleDelete(row)">删除</button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -99,32 +116,74 @@
       </el-table>
     </div>
 
-    <!-- 普通用户：卡片列表 -->
-    <div v-else>
-      <!-- 状态筛选 Tab -->
-      <div class="filter-tabs">
-        <button
-          v-for="t in statusTabs"
-          :key="t.value"
-          :class="['filter-tab', { active: activeStatus === t.value }]"
-          @click="activeStatus = t.value"
-        >
-          {{ t.label }}
-          <span v-if="statusCount(t.value)" class="tab-count">{{ statusCount(t.value) }}</span>
-        </button>
-      </div>
-
-      <el-empty v-if="filteredUserOrders.length === 0" description="暂无相关订单" :image-size="80"/>
-
+    <!-- 农户：接单视图 -->
+    <div v-else-if="isFarmer">
+      <el-empty v-if="filteredOrders.length === 0" description="暂无相关订单" :image-size="80"/>
       <div v-else class="order-cards">
-        <div class="order-card" v-for="order in filteredUserOrders" :key="order.order_id">
+        <div class="order-card farmer-card" v-for="order in filteredOrders" :key="order.order_id">
           <div class="card-head">
             <div class="card-id">
               <svg viewBox="0 0 14 14" fill="none" stroke="#9a9a8a" stroke-width="1.5" width="13" height="13">
                 <rect x="1" y="2" width="12" height="10" rx="1.5"/>
                 <line x1="4" y1="6" x2="10" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/>
               </svg>
-              <span>{{ order.order_id }}</span>
+              <span>No.{{ order.order_id }}</span>
+            </div>
+            <span :class="['status-pill', 'status-' + order.order_status]">{{ statusText(order.order_status) }}</span>
+          </div>
+          <div class="card-body">
+            <div class="card-row">
+              <span class="card-label">商品</span>
+              <span class="card-val">{{ order.goods || '—' }}</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">买家</span>
+              <span class="card-val">{{ order.buyer || '—' }}</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">下单时间</span>
+              <span class="card-val">{{ formatDate(order.order_time) }}</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">金额</span>
+              <span class="card-val money large">¥{{ Number(order.order_amount).toFixed(2) }}</span>
+            </div>
+          </div>
+          <!-- 农户操作按钮 -->
+          <div class="card-actions" v-if="farmerCanOperate(order)">
+            <button
+              v-if="order.order_status === 1"
+              class="action-btn-filled green"
+              @click="updateOrderStatus(order, 2)"
+            >
+              <svg viewBox="0 0 14 14" fill="none" stroke="white" stroke-width="1.5" width="12" height="12">
+                <path d="M1 7h9M7 4l3 3-3 3"/>
+              </svg>
+              确认发货
+            </button>
+            <button
+              v-if="order.order_status === 2"
+              class="action-btn-filled blue"
+              @click="updateOrderStatus(order, 3)"
+            >已发货，等待签收</button>
+            <span v-if="order.order_status === 3" class="status-hint">买家签收后自动完成</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 买家：卡片列表 -->
+    <div v-else>
+      <el-empty v-if="filteredOrders.length === 0" description="暂无相关订单" :image-size="80"/>
+      <div v-else class="order-cards">
+        <div class="order-card" v-for="order in filteredOrders" :key="order.order_id">
+          <div class="card-head">
+            <div class="card-id">
+              <svg viewBox="0 0 14 14" fill="none" stroke="#9a9a8a" stroke-width="1.5" width="13" height="13">
+                <rect x="1" y="2" width="12" height="10" rx="1.5"/>
+                <line x1="4" y1="6" x2="10" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/>
+              </svg>
+              <span>No.{{ order.order_id }}</span>
             </div>
             <span :class="['status-pill', 'status-' + order.order_status]">{{ statusText(order.order_status) }}</span>
           </div>
@@ -146,20 +205,29 @@
               <span class="card-val money large">¥{{ Number(order.order_amount).toFixed(2) }}</span>
             </div>
           </div>
+          <!-- 买家操作：待付款可取消，已发货可签收 -->
+          <div class="card-actions">
+            <button
+              v-if="order.order_status === 0"
+              class="action-btn-outlined red"
+              @click="buyerCancelOrder(order)"
+            >取消订单</button>
+            <button
+              v-if="order.order_status === 2"
+              class="action-btn-filled green"
+              @click="buyerConfirmReceive(order)"
+            >确认签收</button>
+            <button
+              v-if="order.order_status === 4"
+              class="action-btn-outlined amber"
+              @click="buyerApplyRefund(order)"
+            >申请退款</button>
+          </div>
         </div>
-      </div>
-
-      <div class="pagination-wrap" v-if="filteredUserOrders.length > pageSize">
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="filteredUserOrders.length"
-          layout="prev, pager, next"
-        />
       </div>
     </div>
 
-    <!-- 新增/编辑弹窗 -->
+    <!-- 新增/编辑弹窗（管理员） -->
     <el-dialog :title="dialogType === 'add' ? '新增订单' : '编辑订单'" v-model="dialogVisible" width="500px" class="art-dialog">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="90px" class="dialog-form">
         <el-form-item label="用户" prop="user_id" v-if="isAdmin">
@@ -178,11 +246,7 @@
         </el-form-item>
         <el-form-item label="订单状态" prop="order_status">
           <el-select v-model="form.order_status" style="width:100%">
-            <el-option :value="0" label="未支付"/>
-            <el-option :value="1" label="已支付"/>
-            <el-option :value="2" label="已发货"/>
-            <el-option :value="3" label="已完成"/>
-            <el-option :value="4" label="已取消"/>
+            <el-option v-for="s in allStatusOptions" :key="s.value" :label="s.label" :value="s.value"/>
           </el-select>
         </el-form-item>
       </el-form>
@@ -202,14 +266,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 const apiUrl = import.meta.env.VITE_API_URL || ''
 const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
-const isAdmin = computed(() => currentUser.value?.authority === 0)
+const isAdmin  = computed(() => currentUser.value?.authority === 0)
+const isFarmer = computed(() => currentUser.value?.authority === 1)
+const isBuyer  = computed(() => currentUser.value?.authority === 2)
 
 const orders  = ref([])
 const users   = ref([])
 const loading = ref(false)
 const searchKeyword = ref('')
-const currentPage   = ref(1)
-const pageSize      = ref(12)
 const activeStatus  = ref(-1)
 const dialogVisible = ref(false)
 const dialogType    = ref('add')
@@ -227,30 +291,61 @@ const formRules = {
   seller:       [{ required: true, message: '请输入卖家',     trigger: 'blur' }],
   order_time:   [{ required: true, message: '请选择时间',     trigger: 'change' }],
   order_amount: [{ required: true, message: '请输入金额',     trigger: 'blur' }],
-  order_status: [{ required: true, message: '请选择状态',     trigger: 'change' }],
 }
 
-const statusTabs = [
-  { label: '全部',   value: -1 },
-  { label: '未支付', value: 0  },
-  { label: '已支付', value: 1  },
-  { label: '已发货', value: 2  },
-  { label: '已完成', value: 3  },
-  { label: '已取消', value: 4  },
+// 新增多种订单状态
+const allStatusOptions = [
+  { value: 0, label: '待付款' },
+  { value: 1, label: '已付款待发货' },
+  { value: 2, label: '已发货' },
+  { value: 3, label: '已签收' },
+  { value: 4, label: '已完成' },
+  { value: 5, label: '已取消' },
+  { value: 6, label: '退款中' },
+  { value: 7, label: '已退款' },
 ]
 
-const userOrders = computed(() => {
-  if (!currentUser.value) return []
+const statusTabs = computed(() => {
+  const base = [{ label: '全部', value: -1 }]
+  if (isFarmer.value) {
+    return [...base,
+      { label: '待付款', value: 0 },
+      { label: '待发货', value: 1 },
+      { label: '已发货', value: 2 },
+      { label: '已签收', value: 3 },
+      { label: '已完成', value: 4 },
+      { label: '退款中', value: 6 },
+    ]
+  }
+  if (isBuyer.value) {
+    return [...base,
+      { label: '待付款', value: 0 },
+      { label: '待发货', value: 1 },
+      { label: '已发货', value: 2 },
+      { label: '已完成', value: 4 },
+      { label: '已取消', value: 5 },
+      { label: '退款中', value: 6 },
+    ]
+  }
+  return [...base, ...allStatusOptions]
+})
+
+const statusText = (s) => allStatusOptions.find(o => o.value === s)?.label ?? '—'
+
+// 农户：只看涉及自己的订单；买家：看自己下的订单
+const myOrders = computed(() => {
+  if (isFarmer.value) return orders.value
   return orders.value.filter(o => o.user_id === currentUser.value.id)
 })
 
-const filteredUserOrders = computed(() => {
-  let list = activeStatus.value === -1 ? userOrders.value
-    : userOrders.value.filter(o => o.order_status === activeStatus.value)
+const filteredOrders = computed(() => {
+  let list = activeStatus.value === -1 ? myOrders.value
+    : myOrders.value.filter(o => o.order_status === activeStatus.value)
   const kw = searchKeyword.value.toLowerCase()
   if (kw) list = list.filter(o =>
     o.order_id?.toString().includes(kw) ||
     o.goods?.toLowerCase().includes(kw) ||
+    o.buyer?.toLowerCase().includes(kw) ||
     o.seller?.toLowerCase().includes(kw)
   )
   return list
@@ -266,37 +361,52 @@ const filteredUsers = computed(() => {
   )
 })
 
-const getUserOrders = (uid) => orders.value.filter(o => o.user_id === uid)
-
-const statusCount = (val) => {
-  if (val === -1) return 0
-  return userOrders.value.filter(o => o.order_status === val).length
+const getUserOrders = (uid) => {
+  let list = orders.value.filter(o => o.user_id === uid)
+  if (activeStatus.value !== -1) list = list.filter(o => o.order_status === activeStatus.value)
+  return list
 }
 
-const stats = computed(() => [
-  { label: '全部订单', val: userOrders.value.length,
-    color: '#2d6a45', bg: '#EAF3DE',
-    svg: '<rect x="2" y="3" width="16" height="13" rx="1.5"/><line x1="5" y1="7" x2="15" y2="7"/><line x1="5" y1="11" x2="11" y2="11"/>' },
-  { label: '已完成',
-    val: userOrders.value.filter(o => o.order_status === 3).length,
-    color: '#185FA5', bg: '#E6F1FB',
-    svg: '<circle cx="10" cy="10" r="8"/><polyline points="6.5,10 8.5,12.5 13.5,7.5"/>' },
-  { label: '累计消费',
-    val: '¥' + userOrders.value.reduce((s,o) => s + Number(o.order_amount||0), 0).toFixed(0),
-    color: '#BA7517', bg: '#FAEEDA',
-    svg: '<circle cx="10" cy="10" r="8"/><path d="M10 6v8M7.5 8.5h4a1 1 0 010 2h-4"/>' },
-  { label: '待支付',
-    val: userOrders.value.filter(o => o.order_status === 0).length,
-    color: '#993C1D', bg: '#FAECE7',
-    svg: '<circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="10"/><circle cx="10" cy="13" r="0.8" fill="#993C1D" stroke="none"/>' },
-])
+const statusCount = (val) => myOrders.value.filter(o => o.order_status === val).length
+
+const stats = computed(() => {
+  if (isFarmer.value) {
+    return [
+      { label: '全部订单', val: myOrders.value.length, color: '#2d6a45', bg: '#EAF3DE',
+        svg: '<rect x="2" y="3" width="16" height="13" rx="1.5"/><line x1="5" y1="7" x2="15" y2="7"/><line x1="5" y1="11" x2="11" y2="11"/>' },
+      { label: '待发货', val: myOrders.value.filter(o => o.order_status === 1).length,
+        color: '#854F0B', bg: '#FAEEDA',
+        svg: '<path d="M2 8h12M2 8l3-4M14 8l-3-4M2 8v5a1 1 0 001 1h10a1 1 0 001-1V8"/>' },
+      { label: '已完成', val: myOrders.value.filter(o => o.order_status === 4).length,
+        color: '#185FA5', bg: '#E6F1FB',
+        svg: '<circle cx="10" cy="10" r="8"/><polyline points="6.5,10 8.5,12.5 13.5,7.5"/>' },
+      { label: '总收入', val: '¥' + myOrders.value.filter(o => [3,4].includes(o.order_status))
+          .reduce((s,o) => s + Number(o.order_amount||0), 0).toFixed(0),
+        color: '#BA7517', bg: '#FAEEDA',
+        svg: '<circle cx="10" cy="10" r="8"/><path d="M10 6v8M7.5 8.5h4a1 1 0 010 2h-4"/>' },
+    ]
+  }
+  return [
+    { label: '全部订单', val: myOrders.value.length, color: '#2d6a45', bg: '#EAF3DE',
+      svg: '<rect x="2" y="3" width="16" height="13" rx="1.5"/><line x1="5" y1="7" x2="15" y2="7"/><line x1="5" y1="11" x2="11" y2="11"/>' },
+    { label: '已完成', val: myOrders.value.filter(o => o.order_status === 4).length,
+      color: '#185FA5', bg: '#E6F1FB',
+      svg: '<circle cx="10" cy="10" r="8"/><polyline points="6.5,10 8.5,12.5 13.5,7.5"/>' },
+    { label: '累计消费', val: '¥' + myOrders.value.reduce((s,o) => s + Number(o.order_amount||0), 0).toFixed(0),
+      color: '#BA7517', bg: '#FAEEDA',
+      svg: '<circle cx="10" cy="10" r="8"/><path d="M10 6v8M7.5 8.5h4a1 1 0 010 2h-4"/>' },
+    { label: '待付款', val: myOrders.value.filter(o => o.order_status === 0).length,
+      color: '#993C1D', bg: '#FAECE7',
+      svg: '<circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="10"/><circle cx="10" cy="13" r="0.8" fill="#993C1D" stroke="none"/>' },
+  ]
+})
+
+const farmerCanOperate = (order) => [1, 2].includes(order.order_status)
 
 const formatDate = (t) => {
   if (!t) return '—'
   return new Date(t).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
 }
-
-const statusText = (s) => ({ 0:'未支付', 1:'已支付', 2:'已发货', 3:'已完成', 4:'已取消' }[s] ?? '—')
 
 const avatarColors = ['#C0DD97,#3B6D11','#B5D4F4,#185FA5','#F5C4B3,#993C1D','#CECBF6,#3C3489','#9FE1CB,#0F6E56']
 const avatarStyle = (name) => {
@@ -305,11 +415,20 @@ const avatarStyle = (name) => {
   return { background: bg, color }
 }
 
+// ── 数据获取 ──
 const fetchOrders = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${apiUrl}/tables/orders`)
-    orders.value = res.data.data || []
+    if (isFarmer.value) {
+      // 农户：拉取涉及自己的订单
+      const res = await axios.get(`${apiUrl}/farmer/orders`, {
+        params: { farmer_id: currentUser.value.id }
+      })
+      orders.value = res.data.data || []
+    } else {
+      const res = await axios.get(`${apiUrl}/tables/orders`)
+      orders.value = res.data.data || []
+    }
   } catch { ElMessage.error('获取订单失败') }
   finally { loading.value = false }
 }
@@ -321,6 +440,46 @@ const fetchUsers = async () => {
   } catch {}
 }
 
+// ── 农户操作 ──
+const updateOrderStatus = async (order, newStatus) => {
+  const label = statusText(newStatus)
+  try {
+    await ElMessageBox.confirm(`确认将订单状态更新为「${label}」？`, '确认操作', { type: 'info' })
+    await axios.put(`${apiUrl}/farmer/orders/${order.order_id}/status`, { order_status: newStatus })
+    order.order_status = newStatus
+    ElMessage.success(`已更新为${label}`)
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
+}
+
+// ── 买家操作 ──
+const buyerCancelOrder = async (order) => {
+  try {
+    await ElMessageBox.confirm('确定取消该订单吗？', '提示', { type: 'warning' })
+    await axios.put(`${apiUrl}/tables/orders/${order.order_id}`, { ...order, order_status: 5 })
+    order.order_status = 5
+    ElMessage.success('订单已取消')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
+}
+
+const buyerConfirmReceive = async (order) => {
+  try {
+    await ElMessageBox.confirm('确认已收到货物？签收后订单将完成', '确认签收', { type: 'info' })
+    await axios.put(`${apiUrl}/tables/orders/${order.order_id}`, { ...order, order_status: 4 })
+    order.order_status = 4
+    ElMessage.success('签收成功，订单已完成')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
+}
+
+const buyerApplyRefund = async (order) => {
+  try {
+    await ElMessageBox.confirm('确定申请退款吗？', '提示', { type: 'warning' })
+    await axios.put(`${apiUrl}/tables/orders/${order.order_id}`, { ...order, order_status: 6 })
+    order.order_status = 6
+    ElMessage.success('退款申请已提交')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
+}
+
+// ── 管理员操作 ──
 const handleAdd = () => {
   dialogType.value = 'add'
   form.value = { order_id:null, user_id:null, goods:'', buyer:'', seller:'',
@@ -337,7 +496,7 @@ const handleAddOrderForUser = (user) => {
 
 const handleEdit = (row) => {
   dialogType.value = 'edit'
-  form.value = { ...row }
+  form.value = { ...row, order_status: parseInt(row.order_status) || 0 }
   dialogVisible.value = true
 }
 
@@ -367,7 +526,7 @@ const submitForm = async () => {
   })
 }
 
-onMounted(() => { fetchOrders(); fetchUsers() })
+onMounted(() => { fetchOrders(); if (isAdmin.value) fetchUsers() })
 </script>
 
 <style scoped lang="scss">
@@ -379,12 +538,11 @@ onMounted(() => { fetchOrders(); fetchUsers() })
   overflow-x: hidden;
 }
 
-/* ── 顶部 ── */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -397,317 +555,188 @@ onMounted(() => { fetchOrders(); fetchUsers() })
   margin: 0 0 4px;
 }
 
-.page-sub {
-  font-size: 12px;
-  color: #9a9a8a;
-  margin: 0;
-}
+.page-sub { font-size: 12px; color: #9a9a8a; margin: 0; }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.header-right { display: flex; align-items: center; gap: 10px; }
 
 .search-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: white;
-  border: 1px solid #e8e5de;
-  border-radius: 4px;
-  padding: 7px 12px;
-  transition: border-color .2s;
+  display: flex; align-items: center; gap: 8px;
+  background: white; border: 1px solid #e8e5de; border-radius: 4px;
+  padding: 7px 12px; transition: border-color .2s;
   &:focus-within { border-color: #2d6a45; }
 }
 
 .search-input {
-  border: none;
-  outline: none;
-  font-size: 13px;
-  color: #1a1a12;
-  background: transparent;
-  width: 200px;
-  font-family: 'Inter', sans-serif;
+  border: none; outline: none; font-size: 13px; color: #1a1a12;
+  background: transparent; width: 200px; font-family: 'Inter', sans-serif;
   &::placeholder { color: #c8c8b8; }
 }
 
 .add-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: #1a3a22;
-  color: #f0ede8;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: 'Inter', sans-serif;
-  transition: background .2s;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; background: #1a3a22; color: #f0ede8;
+  border: none; border-radius: 4px; font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s;
   white-space: nowrap;
   &:hover { background: #2d6a45; }
 }
 
-/* ── 统计卡片 ── */
 .stat-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .stat-card {
-  background: white;
-  border: 1px solid #eeebe4;
-  border-radius: 8px;
-  padding: 16px 18px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  background: white; border: 1px solid #eeebe4; border-radius: 8px;
+  padding: 16px 18px; display: flex; align-items: center; gap: 14px;
   transition: border-color .2s, transform .15s;
   &:hover { border-color: #c8d8c0; transform: translateY(-2px); }
 }
 
 .stat-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 
-.stat-val {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  margin-bottom: 3px;
-  font-family: 'Inter', sans-serif;
-}
+.stat-val { font-size: 22px; font-weight: 600; line-height: 1.2; margin-bottom: 3px; }
+.stat-lbl { font-size: 11px; color: #9a9a8a; letter-spacing: .5px; }
 
-.stat-lbl {
-  font-size: 11px;
-  color: #9a9a8a;
-  letter-spacing: .5px;
-}
-
-/* ── 状态筛选 Tab ── */
 .filter-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
+  display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap;
 }
 
 .filter-tab {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 14px;
-  border: 1px solid #e8e5de;
-  border-radius: 4px;
-  background: white;
-  font-size: 12px;
-  color: #6a6a5a;
-  cursor: pointer;
-  font-family: 'Inter', sans-serif;
-  transition: all .15s;
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border: 1px solid #e8e5de; border-radius: 4px;
+  background: white; font-size: 12px; color: #6a6a5a; cursor: pointer;
+  font-family: 'Inter', sans-serif; transition: all .15s;
   &:hover { border-color: #b8d8c0; color: #2d6a45; }
   &.active { background: #1a3a22; border-color: #1a3a22; color: #f0ede8; }
 }
 
 .tab-count {
-  background: rgba(255,255,255,0.25);
-  border-radius: 10px;
-  padding: 1px 6px;
-  font-size: 10px;
+  background: rgba(255,255,255,0.2); border-radius: 10px; padding: 1px 6px; font-size: 10px;
   .filter-tab:not(.active) & { background: #f0f0e8; color: #9a9a8a; }
 }
 
-/* ── 订单卡片 ── */
 .order-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
-  margin-bottom: 20px;
 }
 
 .order-card {
-  background: white;
-  border: 1px solid #eeebe4;
-  border-radius: 8px;
-  overflow: hidden;
+  background: white; border: 1px solid #eeebe4; border-radius: 8px; overflow: hidden;
   transition: border-color .2s, transform .15s;
   &:hover { border-color: #c8d8c0; transform: translateY(-2px); }
+  &.farmer-card { border-left: 3px solid #2d6a45; }
 }
 
 .card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #faf9f6;
-  border-bottom: 1px solid #eeebe4;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: #faf9f6; border-bottom: 1px solid #eeebe4;
 }
 
 .card-id {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #7a7a6a;
+}
+
+.card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+
+.card-row { display: flex; justify-content: space-between; align-items: center; }
+
+.card-label { font-size: 11px; color: #9a9a8a; }
+.card-val { font-size: 13px; color: #1a1a12; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.card-actions {
+  padding: 12px 16px;
+  border-top: 1px solid #f5f3ee;
   display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: #7a7a6a;
-  font-family: 'Inter', sans-serif;
 }
 
-.card-body {
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+.action-btn-filled {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 14px; border: none; border-radius: 4px;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  font-family: 'Inter', sans-serif; transition: all .15s;
+  &.green { background: #1a3a22; color: white; &:hover { background: #2d6a45; } }
+  &.blue  { background: #185FA5; color: white; &:hover { background: #1250A0; } cursor: default; }
 }
 
-.card-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.action-btn-outlined {
+  padding: 6px 14px; border-radius: 4px;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  font-family: 'Inter', sans-serif; transition: all .15s;
+  background: white;
+  &.red   { border: 1px solid #F7C1C1; color: #A32D2D; &:hover { background: #A32D2D; color: white; } }
+  &.amber { border: 1px solid #F5C885; color: #854F0B; &:hover { background: #854F0B; color: white; } }
 }
 
-.card-label {
-  font-size: 11px;
-  color: #9a9a8a;
-  letter-spacing: .3px;
-}
+.status-hint { font-size: 11px; color: #9a9a8a; }
 
-.card-val {
-  font-size: 13px;
-  color: #1a1a12;
-  font-weight: 500;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* 状态 pill（8种状态） */
+.status-pill { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px; letter-spacing: .3px; }
+.status-0 { background: #F1EFE8; color: #5F5E5A; }   /* 待付款 */
+.status-1 { background: #FAEEDA; color: #854F0B; }   /* 已付款待发货 */
+.status-2 { background: #EEEDFE; color: #3C3489; }   /* 已发货 */
+.status-3 { background: #E6F1FB; color: #185FA5; }   /* 已签收 */
+.status-4 { background: #EAF3DE; color: #3B6D11; }   /* 已完成 */
+.status-5 { background: #F1EFE8; color: #9a9a8a; }   /* 已取消 */
+.status-6 { background: #FCEBEB; color: #A32D2D; }   /* 退款中 */
+.status-7 { background: #F1EFE8; color: #5F5E5A; }   /* 已退款 */
 
-/* ── 状态标签 ── */
-.status-pill {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 3px 9px;
-  border-radius: 20px;
-  letter-spacing: .3px;
-}
-.status-0 { background: #FAEEDA; color: #854F0B; }
-.status-1 { background: #E6F1FB; color: #185FA5; }
-.status-2 { background: #EEEDFE; color: #3C3489; }
-.status-3 { background: #EAF3DE; color: #3B6D11; }
-.status-4 { background: #F1EFE8; color: #5F5E5A; }
-
-/* ── 金额 ── */
 .money { color: #BA7517; font-weight: 600; }
 .money.large { font-size: 15px; }
 
-/* ── 表格 ── */
+/* 表格 */
 .table-wrap { background: white; border-radius: 8px; overflow: hidden; border: 1px solid #eeebe4; }
-
 .art-table {
-  :deep(th) { background: #faf9f6 !important; font-size: 12px; color: #7a7a6a; font-weight: 500; letter-spacing: .3px; }
+  :deep(th) { background: #faf9f6 !important; font-size: 12px; color: #7a7a6a; font-weight: 500; }
   :deep(td) { font-size: 13px; }
 }
-
-.user-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+.user-cell { display: flex; align-items: center; gap: 8px; }
 .user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; flex-shrink: 0;
 }
-
-.expand-orders {
-  padding: 16px 24px;
-  background: #faf9f6;
-}
-
-.expand-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #2d6a45;
-  margin-bottom: 12px;
-}
-
-.inner-table {
-  :deep(th) { background: #f3f0e8 !important; font-size: 12px; }
-}
-
+.expand-orders { padding: 16px 24px; background: #faf9f6; }
+.expand-title { font-size: 13px; font-weight: 500; color: #2d6a45; margin-bottom: 12px; }
+.inner-table { :deep(th) { background: #f3f0e8 !important; font-size: 12px; } }
 .tbl-btn {
-  padding: 3px 10px;
-  border-radius: 3px;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid;
-  font-family: 'Inter', sans-serif;
-  transition: all .15s;
-  margin-right: 6px;
+  padding: 3px 10px; border-radius: 3px; font-size: 12px; cursor: pointer;
+  border: 1px solid; font-family: 'Inter', sans-serif; transition: all .15s; margin-right: 6px;
   &.edit { border-color: #b8d8c0; color: #2d6a45; background: #f0faf4; &:hover { background: #2d6a45; color: white; } }
   &.del  { border-color: #F7C1C1; color: #A32D2D; background: #FCEBEB; &:hover { background: #A32D2D; color: white; } }
 }
-
 .order-count { font-size: 13px; color: #6a6a5a; b { color: #1a1a12; } }
 
-/* ── 分页 ── */
-.pagination-wrap { display: flex; justify-content: center; margin-top: 20px; }
-
-/* ── 弹窗 ── */
+/* 弹窗 */
 .art-dialog {
   :deep(.el-dialog__header) { border-bottom: 1px solid #eeebe4; padding-bottom: 16px; }
   :deep(.el-dialog__title) { font-family: 'Noto Serif SC', serif; font-size: 18px; font-weight: 400; }
   :deep(.el-dialog__footer) { border-top: 1px solid #eeebe4; padding-top: 16px; display: flex; justify-content: flex-end; gap: 10px; }
 }
-
-.dialog-form {
-  :deep(.el-form-item__label) { font-size: 12px; color: #7a7a6a; }
-}
-
+.dialog-form { :deep(.el-form-item__label) { font-size: 12px; color: #7a7a6a; } }
 .dialog-cancel {
-  padding: 8px 20px;
-  border: 1px solid #e8e5de;
-  border-radius: 3px;
-  background: white;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: 'Inter', sans-serif;
-  color: #6a6a5a;
+  padding: 8px 20px; border: 1px solid #e8e5de; border-radius: 3px;
+  background: white; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif; color: #6a6a5a;
   &:hover { border-color: #b8d8c0; color: #2d6a45; }
 }
-
 .dialog-confirm {
-  padding: 8px 24px;
-  border: none;
-  border-radius: 3px;
-  background: #1a3a22;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: 'Inter', sans-serif;
-  color: #f0ede8;
-  font-weight: 500;
+  padding: 8px 24px; border: none; border-radius: 3px;
+  background: #1a3a22; font-size: 13px; cursor: pointer;
+  font-family: 'Inter', sans-serif; color: #f0ede8; font-weight: 500;
   &:hover { background: #2d6a45; }
 }
 
-/* ── 响应式 ── */
 @media (max-width: 900px) {
-  .orders-page { padding: 20px 16px; }
   .stat-row { grid-template-columns: repeat(2,1fr); }
   .order-cards { grid-template-columns: 1fr; }
 }
