@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
-import { ElMessage } from 'element-plus' 
+import { ElMessage } from 'element-plus'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -36,16 +36,16 @@ const router = createRouter({
       meta: { requiresAuth: true, authority: [0] }
     },
     {
+      // 原任务管理，现改为助农社区，所有登录用户均可访问
       path: '/tasks',
       name: 'tasks',
       component: () => import('../views/TasksView.vue'),
-      meta: { requiresAuth: true, authority: [0, 2] }
+      meta: { requiresAuth: true }
     },
     {
       path: '/orders',
       name: 'orders',
       component: () => import('../views/orders.vue'),
-      //meta: { requiresAuth: true, authority: [0, 2] }
       meta: { requiresAuth: true }
     },
     {
@@ -78,22 +78,17 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const userStr = localStorage.getItem('user')
   const user = userStr ? JSON.parse(userStr) : null
-  
-  // 需要登录的页面
+
   if (to.meta.requiresAuth) {
     if (!user) {
-      // 未登录，跳转到登录页
       next({ path: '/login' })
     } else if (to.meta.authority && !to.meta.authority.includes(user.authority)) {
-      // 权限不足
       ElMessage.error('您没有权限访问该页面')
       next({ path: '/' })
     } else {
-      // 已登录且有权限
       next()
     }
   } else {
-    // 不需要登录的页面
     next()
   }
 })

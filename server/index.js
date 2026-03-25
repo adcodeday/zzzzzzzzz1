@@ -320,6 +320,476 @@ app.post('/api/user/avatar/:userId', upload.single('avatar'), async (req, res) =
   }
 });
 
+// 执行自定义 SQL
+app.post('/api/sql', async (req, res) => {
+  const { sql } = req.body
+  if (!sql) return res.status(400).json({ success: false, message: 'SQL 不能为空' })
+  try {
+    const [result] = await pool.query(sql)
+    res.json({ success: true, data: result })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '执行失败', error: error.message })
+  }
+})
+
+// ==================== 助农社区接口 ====================
+
+// ------------------------------------------------------------
+// 帖子列表
+// GET /api/community/posts?type=&page=&limit=
+//   type  : 不传=全部  1=好物推荐  2=助农任务
+//   page  : 页码，默认 1
+//   limit : 每页条数，默认 10
+// ------------------------------------------------------------
+app.get('/api/community/posts', async (req, res) => {
+  const { type, page = 1, limit = 10 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    // 构建 WHERE 条件
+    const conditions = ['p.status != 0'];
+    const params = [];
+    if (type) {
+      conditions.push('p.type = ?');
+      params.push(parseInt(type));
+    }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // 查帖子列表，同时 JOIN user 表取发帖人昵称和头像
+    const [rows] = await pool.query(
+      `SELECT
+         p.id, p.type, p.title, p.content, p.image,
+         p.reward, p.start_time, p.end_time, p.location,
+         p.max_people, p.signup_count,
+         p.like_count, p.comment_count, p.status, p.created_at,
+         u.id AS user_id, u.nickName AS user_nick, u.userName AS user_name, u.png AS user_avatar
+       FROM community_posts p
+       LEFT JOIN user u ON p.user_id = u.id
+       ${where}
+       ORDER BY p.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
+    );
+
+    // 查总数
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM community_posts p ${where}`,
+      params
+    );
+
+    res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取帖子列表失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 帖子详情（含是否已点赞、是否已报名）
+// GET /api/community/posts/:id?user_id=
+// ------------------------------------------------------------
+app.get('/api/community/posts/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.query;
+
+  try {
+    const [[post]] = await pool.query(
+      `SELECT
+         p.*, u.id AS user_id, u.nickName AS user_nick,
+         u.userName AS user_name, u.png AS user_avatar
+       FROM community_posts p
+       LEFT JOIN user u ON p.user_id = u.id
+       WHERE p.id = ? AND p.status != 0`,
+      [id]
+    );
+    if (!post) return res.status(404).json({ success: false, message: '帖子不存在' });
+
+    // 当前用户是否已点赞
+    let is_liked = false;
+    let is_signed_up = false;
+    if (user_id) {
+      const [[likeRow]] = await pool.query(
+        'SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?',
+        [id, user_id]
+      );
+      is_liked = !!likeRow;
+
+      if (post.type === 2) {
+        const [[signupRow]] = await pool.query(
+          'SELECT id FROM post_signups WHERE post_id = ? AND user_id = ? AND status != 0',
+          [id, user_id]
+        );
+        is_signed_up = !!signupRow;
+      }
+    }
+
+    res.json({ success: true, data: { ...post, is_liked, is_signed_up } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取帖子详情失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 发布帖子（农户/管理员）
+// POST /api/community/posts
+// Body: { user_id, type, title, content, image?,
+//         reward?, start_time?, end_time?, location?, max_people? }
+// ------------------------------------------------------------
+app.post('/api/community/posts', async (req, res) => {
+  const {
+    user_id, type, title, content, image,
+    reward, start_time, end_time, location, max_people
+  } = req.body;
+
+  // 基础校验
+  if (!user_id || !type || !title || !content) {
+    return res.status(400).json({ success: false, message: '参数缺失：user_id / type / title / content 为必填项' });
+  }
+  if (![1, 2].includes(parseInt(type))) {
+    return res.status(400).json({ success: false, message: 'type 只能为 1（好物推荐）或 2（助农任务）' });
+  }
+  // 任务帖子额外校验
+  if (parseInt(type) === 2 && (!reward || !start_time || !end_time || !location || !max_people)) {
+    return res.status(400).json({ success: false, message: '助农任务帖子需填写：reward / start_time / end_time / location / max_people' });
+  }
+
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO community_posts
+         (user_id, type, title, content, image,
+          reward, start_time, end_time, location, max_people)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user_id, parseInt(type), title, content, image || null,
+        reward || null, start_time || null, end_time || null,
+        location || null, max_people ? parseInt(max_people) : null
+      ]
+    );
+    res.json({ success: true, message: '发布成功', id: result.insertId });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '发布失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 删除帖子
+// DELETE /api/community/posts/:id
+// Body: { user_id, authority }
+//   农户只能删自己的帖子，管理员可删任意帖子
+// ------------------------------------------------------------
+app.delete('/api/community/posts/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_id, authority } = req.body;
+
+  try {
+    const [[post]] = await pool.query('SELECT user_id FROM community_posts WHERE id = ?', [id]);
+    if (!post) return res.status(404).json({ success: false, message: '帖子不存在' });
+
+    // 权限校验：管理员(0)可删全部，其他人只能删自己的
+    if (parseInt(authority) !== 0 && post.user_id !== parseInt(user_id)) {
+      return res.status(403).json({ success: false, message: '无权限删除该帖子' });
+    }
+
+    await pool.query('DELETE FROM community_posts WHERE id = ?', [id]);
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '删除失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 下架帖子（管理员，软删除）
+// PUT /api/community/posts/:id/status
+// Body: { status }  0=下架  1=恢复正常
+// ------------------------------------------------------------
+app.put('/api/community/posts/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  try {
+    await pool.query('UPDATE community_posts SET status = ? WHERE id = ?', [status, id]);
+    res.json({ success: true, message: '状态更新成功' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '状态更新失败', error: error.message });
+  }
+});
+
+
+// ==================== 评论接口 ====================
+
+// ------------------------------------------------------------
+// 获取帖子评论列表
+// GET /api/community/posts/:id/comments
+// ------------------------------------------------------------
+app.get('/api/community/posts/:id/comments', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         c.id, c.content, c.created_at,
+         u.id AS user_id, u.nickName AS user_nick,
+         u.userName AS user_name, u.png AS user_avatar
+       FROM post_comments c
+       LEFT JOIN user u ON c.user_id = u.id
+       WHERE c.post_id = ?
+       ORDER BY c.created_at ASC`,
+      [id]
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取评论失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 发表评论（所有登录用户）
+// POST /api/community/posts/:id/comments
+// Body: { user_id, content }
+// ------------------------------------------------------------
+app.post('/api/community/posts/:id/comments', async (req, res) => {
+  const { id } = req.params;
+  const { user_id, content } = req.body;
+
+  if (!user_id || !content || !content.trim()) {
+    return res.status(400).json({ success: false, message: '评论内容不能为空' });
+  }
+
+  try {
+    // 确认帖子存在
+    const [[post]] = await pool.query('SELECT id FROM community_posts WHERE id = ? AND status != 0', [id]);
+    if (!post) return res.status(404).json({ success: false, message: '帖子不存在' });
+
+    // 插入评论
+    const [result] = await pool.query(
+      'INSERT INTO post_comments (post_id, user_id, content) VALUES (?, ?, ?)',
+      [id, user_id, content.trim()]
+    );
+
+    // 更新帖子评论计数
+    await pool.query('UPDATE community_posts SET comment_count = comment_count + 1 WHERE id = ?', [id]);
+
+    res.json({ success: true, message: '评论成功', id: result.insertId });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '评论失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 删除评论
+// DELETE /api/community/posts/:id/comments/:commentId
+// Body: { user_id, authority }
+// ------------------------------------------------------------
+app.delete('/api/community/posts/:id/comments/:commentId', async (req, res) => {
+  const { id, commentId } = req.params;
+  const { user_id, authority } = req.body;
+
+  try {
+    const [[comment]] = await pool.query('SELECT user_id FROM post_comments WHERE id = ? AND post_id = ?', [commentId, id]);
+    if (!comment) return res.status(404).json({ success: false, message: '评论不存在' });
+
+    if (parseInt(authority) !== 0 && comment.user_id !== parseInt(user_id)) {
+      return res.status(403).json({ success: false, message: '无权限删除该评论' });
+    }
+
+    await pool.query('DELETE FROM post_comments WHERE id = ?', [commentId]);
+    // 更新评论计数，最低为 0
+    await pool.query(
+      'UPDATE community_posts SET comment_count = GREATEST(comment_count - 1, 0) WHERE id = ?',
+      [id]
+    );
+
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '删除失败', error: error.message });
+  }
+});
+
+
+// ==================== 点赞接口 ====================
+
+// ------------------------------------------------------------
+// 点赞 / 取消点赞（同一用户重复调用自动切换）
+// POST /api/community/posts/:id/like
+// Body: { user_id }
+// ------------------------------------------------------------
+app.post('/api/community/posts/:id/like', async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.body;
+
+  if (!user_id) return res.status(400).json({ success: false, message: '缺少 user_id' });
+
+  try {
+    // 查是否已点赞
+    const [[existing]] = await pool.query(
+      'SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?',
+      [id, user_id]
+    );
+
+    if (existing) {
+      // 已点赞 → 取消点赞
+      await pool.query('DELETE FROM post_likes WHERE post_id = ? AND user_id = ?', [id, user_id]);
+      await pool.query(
+        'UPDATE community_posts SET like_count = GREATEST(like_count - 1, 0) WHERE id = ?',
+        [id]
+      );
+      res.json({ success: true, liked: false, message: '已取消点赞' });
+    } else {
+      // 未点赞 → 点赞
+      await pool.query('INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)', [id, user_id]);
+      await pool.query('UPDATE community_posts SET like_count = like_count + 1 WHERE id = ?', [id]);
+      res.json({ success: true, liked: true, message: '点赞成功' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: '操作失败', error: error.message });
+  }
+});
+
+
+// ==================== 报名接口 ====================
+
+// ------------------------------------------------------------
+// 报名任务
+// POST /api/community/posts/:id/signup
+// Body: { user_id, remark? }
+// ------------------------------------------------------------
+app.post('/api/community/posts/:id/signup', async (req, res) => {
+  const { id } = req.params;
+  const { user_id, remark } = req.body;
+
+  if (!user_id) return res.status(400).json({ success: false, message: '缺少 user_id' });
+
+  try {
+    // 确认是任务帖子且状态正常
+    const [[post]] = await pool.query(
+      'SELECT id, type, max_people, signup_count, status FROM community_posts WHERE id = ?',
+      [id]
+    );
+    if (!post) return res.status(404).json({ success: false, message: '帖子不存在' });
+    if (post.type !== 2) return res.status(400).json({ success: false, message: '该帖子不是助农任务' });
+    if (post.status === 0) return res.status(400).json({ success: false, message: '该任务已下架' });
+    if (post.signup_count >= post.max_people) {
+      return res.status(400).json({ success: false, message: '报名人数已满' });
+    }
+
+    // 检查是否已报名（status != 0 表示有效报名）
+    const [[existing]] = await pool.query(
+      'SELECT id, status FROM post_signups WHERE post_id = ? AND user_id = ?',
+      [id, user_id]
+    );
+    if (existing && existing.status !== 0) {
+      return res.status(400).json({ success: false, message: '您已报名该任务' });
+    }
+
+    if (existing && existing.status === 0) {
+      // 之前取消过，重新激活
+      await pool.query(
+        'UPDATE post_signups SET status = 1, remark = ?, updated_at = NOW() WHERE post_id = ? AND user_id = ?',
+        [remark || null, id, user_id]
+      );
+    } else {
+      // 新报名
+      await pool.query(
+        'INSERT INTO post_signups (post_id, user_id, remark) VALUES (?, ?, ?)',
+        [id, user_id, remark || null]
+      );
+    }
+
+    // 更新报名计数
+    await pool.query('UPDATE community_posts SET signup_count = signup_count + 1 WHERE id = ?', [id]);
+
+    res.json({ success: true, message: '报名成功' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '报名失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 取消报名
+// DELETE /api/community/posts/:id/signup
+// Body: { user_id }
+// ------------------------------------------------------------
+app.delete('/api/community/posts/:id/signup', async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.body;
+
+  if (!user_id) return res.status(400).json({ success: false, message: '缺少 user_id' });
+
+  try {
+    const [[existing]] = await pool.query(
+      'SELECT id, status FROM post_signups WHERE post_id = ? AND user_id = ?',
+      [id, user_id]
+    );
+    if (!existing || existing.status === 0) {
+      return res.status(400).json({ success: false, message: '您尚未报名该任务' });
+    }
+
+    // 软删除：status 改为 0
+    await pool.query(
+      'UPDATE post_signups SET status = 0, updated_at = NOW() WHERE post_id = ? AND user_id = ?',
+      [id, user_id]
+    );
+
+    // 更新报名计数，最低为 0
+    await pool.query(
+      'UPDATE community_posts SET signup_count = GREATEST(signup_count - 1, 0) WHERE id = ?',
+      [id]
+    );
+
+    res.json({ success: true, message: '取消报名成功' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '取消报名失败', error: error.message });
+  }
+});
+
+
+// ------------------------------------------------------------
+// 查看任务报名名单
+// GET /api/community/posts/:id/signups
+//   农户只能查自己帖子的名单，管理员可查全部
+// Query: { user_id, authority }
+// ------------------------------------------------------------
+app.get('/api/community/posts/:id/signups', async (req, res) => {
+  const { id } = req.params;
+  const { user_id, authority } = req.query;
+
+  try {
+    // 权限校验：非管理员需验证是否为帖子作者
+    if (parseInt(authority) !== 0) {
+      const [[post]] = await pool.query(
+        'SELECT user_id FROM community_posts WHERE id = ?',
+        [id]
+      );
+      if (!post) return res.status(404).json({ success: false, message: '帖子不存在' });
+      if (post.user_id !== parseInt(user_id)) {
+        return res.status(403).json({ success: false, message: '无权限查看报名名单' });
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         s.id, s.status, s.remark, s.created_at,
+         u.id AS user_id, u.nickName AS user_nick,
+         u.userName AS user_name, u.tel, u.png AS user_avatar
+       FROM post_signups s
+       LEFT JOIN user u ON s.user_id = u.id
+       WHERE s.post_id = ? AND s.status != 0
+       ORDER BY s.created_at ASC`,
+      [id]
+    );
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取报名名单失败', error: error.message });
+  }
+});
+
 app.listen(port, () => {
   console.log(`服务器运行在 http://localhost:${port}`);
 });
