@@ -59,9 +59,13 @@
                     <div class="ap-no-img" v-else>📦</div>
                     <div class="ap-info">
                       <div class="ap-name">{{ prod.name }}</div>
-                      <div class="ap-price">¥{{ prod.price }}</div>
+                      <div class="ap-price-row">
+                        <span class="ap-price">¥{{ prod.price }}</span>
+                        <span class="ap-origin" v-if="prod.originalPrice > prod.price">¥{{ prod.originalPrice }}</span>
+                      </div>
+                      <div class="ap-amount" v-if="prod.amount">{{ prod.amount }}</div>
                     </div>
-                    <div class="ap-arrow">›</div>
+                    <div class="ap-btn">查看详情 ›</div>
                   </div>
                 </div>
               </div>
@@ -363,10 +367,8 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRouter } from 'vue-router'
 
 const apiUrl = import.meta.env.VITE_API_URL || ''
-const router = useRouter()
 const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 
 const isAdmin  = computed(() => currentUser.value?.authority === 0)
@@ -401,7 +403,7 @@ const signupList        = ref([])
 const postDialogVisible = ref(false)
 const postSubmitting    = ref(false)
 const postFormRef       = ref(null)
-const approvedProducts  = ref([]) // 农户已审核通过的商品
+const approvedProducts  = ref([])
 
 const postForm = ref({
   type: 1, title: '', content: '', image: '',
@@ -432,33 +434,42 @@ const fetchPosts = async () => {
     const params = { page: currentPage.value, limit: pageSize.value }
     if (activeTab.value !== 0) params.type = activeTab.value
     const res = await axios.get(`${apiUrl}/community/posts`, { params })
-    posts.value = (res.data.data || []).map(p => ({ ...p, _comments: null, is_liked: false, is_signed_up: false, _products: [] }))
+    const rawPosts = res.data.data || []
     total.value = res.data.total || 0
 
-    // 批量拉取点赞/报名状态 + 解析附带商品
-    posts.value.forEach(async (post) => {
-      // 加载附带商品
-      if (post.product_ids) {
-        const ids = post.product_ids.split(',').map(id => parseInt(id.trim())).filter(Boolean)
-        if (ids.length) {
-          try {
-            const pRes = await axios.get(`${apiUrl}/tables/products`)
-            const allProds = pRes.data.data || []
-            post._products = allProds.filter(p => ids.includes(p.id))
-          } catch {}
-        }
+    // 统一拉一次所有审核通过的商品
+    let allProds = []
+    try {
+      const pRes = await axios.get(`${apiUrl}/tables/products`)
+      allProds = (pRes.data.data || []).filter(p => p.audit_status === 1)
+    } catch {}
+
+    // 并发处理每个帖子
+    const processed = await Promise.all(rawPosts.map(async (p) => {
+      // 解析附带商品
+      let _products = []
+      if (p.product_ids) {
+        const ids = p.product_ids.split(',').map(id => parseInt(id.trim())).filter(Boolean)
+        _products = allProds.filter(prod => ids.includes(prod.id))
       }
-      // 点赞/报名状态
+
+      // 获取点赞/报名状态
+      let is_liked = false
+      let is_signed_up = false
       if (currentUser.value?.id) {
         try {
-          const detail = await axios.get(`${apiUrl}/community/posts/${post.id}`, {
+          const detail = await axios.get(`${apiUrl}/community/posts/${p.id}`, {
             params: { user_id: currentUser.value.id }
           })
-          post.is_liked     = detail.data.data.is_liked
-          post.is_signed_up = detail.data.data.is_signed_up
+          is_liked     = detail.data.data.is_liked
+          is_signed_up = detail.data.data.is_signed_up
         } catch {}
       }
-    })
+
+      return { ...p, _comments: null, is_liked, is_signed_up, _products }
+    }))
+
+    posts.value = processed
   } catch {
     ElMessage.error('获取帖子列表失败')
   } finally {
@@ -496,9 +507,7 @@ const openProductDetail = (prod) => {
 }
 
 const addToCartFromPost = (prod) => {
-  // 跳转商城首页并加入购物车（通过 query 传参或 localStorage）
   ElMessage.success(`已将「${prod.name}」加入购物车，前往商城结算`)
-  // 存到 sessionStorage，首页读取
   const cart = JSON.parse(sessionStorage.getItem('pendingCart') || '[]')
   const ex = cart.find(i => i.id === prod.id)
   if (ex) ex.quantity++
@@ -762,13 +771,24 @@ onMounted(fetchPosts)
   &:hover { border-color: #b8d8c0; background: #f0faf4; transform: translateX(2px); }
 }
 
-.ap-img { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-.ap-no-img { width: 40px; height: 40px; border-radius: 6px; background: #f5f3ee; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.ap-img    { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.ap-no-img { width: 44px; height: 44px; border-radius: 6px; background: #f5f3ee; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 
 .ap-info { flex: 1; min-width: 0; }
-.ap-name  { font-size: 13px; font-weight: 500; color: #1a1a12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
-.ap-price { font-size: 12px; color: #BA7517; font-weight: 600; }
-.ap-arrow { font-size: 16px; color: #c0c0b0; flex-shrink: 0; }
+.ap-name      { font-size: 13px; font-weight: 500; color: #1a1a12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+.ap-price-row { display: flex; align-items: baseline; gap: 5px; }
+.ap-price     { font-size: 13px; color: #BA7517; font-weight: 600; }
+.ap-origin    { font-size: 11px; color: #ccc; text-decoration: line-through; }
+.ap-amount    { font-size: 11px; color: #9a9a8a; margin-top: 2px; }
+
+.ap-btn {
+  flex-shrink: 0;
+  font-size: 11px; color: #2d6a45; font-weight: 500;
+  white-space: nowrap; padding: 4px 10px;
+  border-radius: 4px; background: #EAF3DE;
+  transition: all .15s;
+  .ap-item:hover & { background: #2d6a45; color: white; }
+}
 
 // ── 助农任务 ──
 .task-card .task-main { padding: 18px 20px 14px; }
@@ -830,7 +850,6 @@ onMounted(fetchPosts)
 .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #aaa; font-size: 12px; }
 
 // ── 商品选择器 ──
-.product-picker {}
 .no-products { font-size: 12px; color: #b0b0a0; padding: 8px 0; }
 .product-pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
 .pick-item {
@@ -863,7 +882,6 @@ onMounted(fetchPosts)
 .pd-img-wrap { width: 100%; height: 200px; border-radius: 10px; overflow: hidden; background: #f5f3ee; display: flex; align-items: center; justify-content: center; }
 .pd-img { width: 100%; height: 100%; object-fit: cover; }
 .pd-no-img { font-size: 60px; }
-.pd-info {}
 .pd-name { font-size: 18px; font-weight: 600; color: #1a1a12; margin: 0 0 10px; }
 .pd-price-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .pd-price  { font-size: 24px; font-weight: 700; color: #BA7517; }

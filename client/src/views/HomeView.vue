@@ -316,9 +316,10 @@ const fetchProducts = async () => {
   loading.value = true
   try {
     const res = await axios.get(`${apiUrl}/tables/products`)
+    const approved = (res.data.data || []).filter(p => p.audit_status === 1)
     products.value = activeCategory.value === 0
-      ? (res.data.data || [])
-      : (res.data.data || []).filter(p => p.categoryId === activeCategory.value)
+      ? approved
+      : approved.filter(p => p.categoryId === activeCategory.value)
   } catch {}
   finally { loading.value = false }
 }

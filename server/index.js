@@ -361,7 +361,7 @@ app.get('/api/community/posts', async (req, res) => {
          p.id, p.type, p.title, p.content, p.image,
          p.reward, p.start_time, p.end_time, p.location,
          p.max_people, p.signup_count,
-         p.like_count, p.comment_count, p.status, p.created_at,
+         p.like_count, p.comment_count, p.status, p.created_at,p.product_ids,
          u.id AS user_id, u.nickName AS user_nick, u.userName AS user_name, u.png AS user_avatar
        FROM community_posts p
        LEFT JOIN user u ON p.user_id = u.id
@@ -439,7 +439,8 @@ app.get('/api/community/posts/:id', async (req, res) => {
 app.post('/api/community/posts', async (req, res) => {
   const {
     user_id, type, title, content, image,
-    reward, start_time, end_time, location, max_people
+    reward, start_time, end_time, location, max_people,
+    product_ids
   } = req.body;
 
   // 基础校验
@@ -449,21 +450,20 @@ app.post('/api/community/posts', async (req, res) => {
   if (![1, 2].includes(parseInt(type))) {
     return res.status(400).json({ success: false, message: 'type 只能为 1（好物推荐）或 2（助农任务）' });
   }
-  // 任务帖子额外校验
   if (parseInt(type) === 2 && (!reward || !start_time || !end_time || !location || !max_people)) {
     return res.status(400).json({ success: false, message: '助农任务帖子需填写：reward / start_time / end_time / location / max_people' });
   }
 
   try {
     const [result] = await pool.query(
-      `INSERT INTO community_posts
-         (user_id, type, title, content, image,
-          reward, start_time, end_time, location, max_people)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO community_posts 
+        (user_id, type, title, content, image, reward, start_time, end_time, location, max_people, product_ids) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user_id, parseInt(type), title, content, image || null,
         reward || null, start_time || null, end_time || null,
-        location || null, max_people ? parseInt(max_people) : null
+        location || null, max_people ? parseInt(max_people) : null,
+        product_ids || null
       ]
     );
     res.json({ success: true, message: '发布成功', id: result.insertId });

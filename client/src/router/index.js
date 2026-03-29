@@ -27,7 +27,7 @@ const router = createRouter({
       path: '/products',
       name: 'products',
       component: () => import('../views/ProductsView.vue'),
-      meta: { requiresAuth: true, authority: [0] }
+      meta: { requiresAuth: true, authority: [0, 1] }  // 原来是 [0]，加上 1
     },
     {
       path: '/farmers',
